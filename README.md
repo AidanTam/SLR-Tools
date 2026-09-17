@@ -22,7 +22,9 @@ A full user manual covering the geologist workflow, every file input type, and a
 
 Requires **Python 3.12 or newer**. The pinned numpy and pandas versions publish no
 wheels for 3.11 or below, so `pip install` fails outright on an older interpreter.
-Check with `py --list` on Windows.
+Check with `py --list` on Windows, or `ls /usr/local/bin/python3*` on macOS.
+
+Windows:
 
 ```bash
 git clone https://github.com/AidanTam/SLR-Tools.git
@@ -31,12 +33,31 @@ py -3.13 -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
 ```
 
+macOS / Linux:
+
+```bash
+git clone https://github.com/AidanTam/SLR-Tools.git
+cd SLR-Tools
+python3.13 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
 ### Running the App
 
-On Windows, double-click **`Run SLR Tools.bat`** in the repo root. It creates a `.venv`
-and installs `requirements.txt` on first run, then starts the app on every run after that.
+Double-click the launcher for your platform in the repo root. Either one creates a
+`.venv` and installs `requirements.txt` on first run, then starts the app on every
+run after that.
 
-By hand, or on macOS and Linux:
+| Platform | Launcher | First-run gatekeeping |
+|----------|----------|-----------------------|
+| Windows | **`Run SLR Tools.bat`** | SmartScreen: *More info* then *Run anyway* |
+| macOS | **`Run SLR Tools.command`** | Right-click the file, *Open*, then *Open* again |
+
+macOS blocks scripts from a downloaded zip on a plain double-click. The right-click
+*Open* route clears that once, after which double-clicking works. If macOS refuses
+outright, run `bash "Run SLR Tools.command"` from Terminal, which is never blocked.
+
+By hand:
 
 ```bash
 python -m streamlit run pyrpa/UI/rpa_tools.py

@@ -1,0 +1,5 @@
+# The macOS/Linux launcher must keep LF endings, or bash rejects it with
+# "$'\r': command not found"; the Windows launcher must keep CRLF.
+*.command text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf

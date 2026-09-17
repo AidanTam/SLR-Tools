@@ -2,6 +2,7 @@ import sys
 import os
 import runpy
 import io
+import time
 import zipfile
 from importlib import reload
 import streamlit as st
@@ -84,8 +85,31 @@ def _build_repo_zip():
                 if f.endswith('.pyc'):
                     continue
                 full = os.path.join(root, f)
-                zf.write(full, os.path.relpath(full, _repo_root))
+                arc = os.path.relpath(full, _repo_root).replace(os.sep, '/')
+                if f.endswith(('.command', '.sh')):
+                    _write_shell_launcher(zf, full, arc)
+                else:
+                    zf.write(full, arc)
     return buf.getvalue()
+
+
+def _write_shell_launcher(zf, full, arc):
+    """Add a shell launcher to the zip so macOS will actually run it.
+
+    Two things a plain ``zf.write`` gets wrong when the app is served from
+    Windows, where neither is visible locally:
+
+    * No execute bit. Finder refuses to open a non-executable ``.command`` on
+      double-click, so force 0755 rather than inheriting the host's mode.
+    * CRLF endings (a Windows checkout with ``core.autocrlf``). bash then fails
+      on the shebang line with ``$'\r': command not found``.
+    """
+    with open(full, 'rb') as fh:
+        data = fh.read().replace(b'\r\n', b'\n')
+    info = zipfile.ZipInfo(arc, date_time=time.localtime(os.path.getmtime(full))[:6])
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = 0o100755 << 16
+    zf.writestr(info, data)
 
 
 st.sidebar.download_button(
@@ -111,25 +135,39 @@ to the server.
 **Run it on your own machine**
 
 A local copy keeps working if this hosted app is down, updated, or you need to
-work offline.
+work offline. Click **⬇️ Download this version** above and unzip it somewhere
+convenient.
 
-1. Click **⬇️ Download this version** above and unzip it somewhere convenient.
-2. Install [Python 3.13](https://www.python.org/downloads/), ticking
-   *Add Python to PATH* during setup. **Python 3.12 or newer is required**, and
-   the launcher picks a valid one even if an older Python is already on PATH.
-3. Double-click **Run SLR Tools.bat** in the unzipped folder.
-4. Your browser opens at http://localhost:8501. Leave the black console window
-   open while you work, and close it (or press `Ctrl+C`) to stop the app.
+First install [Python 3.13](https://www.python.org/downloads/).
+**Python 3.12 or newer is required**, and the launchers pick a valid one even
+if an older Python is already on PATH.
+
+*Windows*
+
+1. Install Python, ticking *Add Python to PATH* during setup.
+2. Double-click **Run SLR Tools.bat** in the unzipped folder.
+3. If SmartScreen warns about the `.bat`, choose *More info* then *Run anyway*.
+
+*macOS*
+
+1. Install Python using the macOS 64-bit universal2 installer.
+2. **Right-click** (or Control-click) **Run SLR Tools.command** in the unzipped
+   folder, choose *Open*, then *Open* again in the warning box. macOS blocks
+   downloaded scripts on a plain double-click, but only the first time: after
+   that, double-clicking it works normally.
+3. Still refusing? Open Terminal, type `bash ` (with the space), drag
+   **Run SLR Tools.command** onto the Terminal window, and press Enter.
+
+Either way, your browser opens at http://localhost:8501. Leave the console
+window open while you work, and press `Ctrl+C` in it to stop the app.
 
 The first run sets itself up: it builds a private Python environment and
 installs everything in `requirements.txt`. That takes a few minutes and needs
 an internet connection, once. Every run after that starts in seconds.
 
-If SmartScreen warns about the `.bat`, choose *More info* then *Run anyway*.
-
 ---
 
-**macOS, Linux, or running it by hand**
+**Running it by hand**
 
 ```
 python3.13 -m venv .venv
@@ -137,12 +175,12 @@ python3.13 -m venv .venv
 .venv/bin/python -m streamlit run pyrpa/UI/rpa_tools.py
 ```
 
+On Windows the equivalent paths are `.venv\Scripts\pip` and
+`.venv\Scripts\python`.
+
 Run `pip install -r requirements.txt` against a Python older than 3.12 and it
 fails with *No matching distribution found for numpy*. Build the environment
 with 3.12+ instead.
-
-On Windows the equivalent paths are `.venv\Scripts\pip` and
-`.venv\Scripts\python`.
 
 ---
 
