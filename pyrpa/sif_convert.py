@@ -76,6 +76,7 @@ class ParsedSif:
     lead_col_names: list = field(default_factory=list)
     analytes: list = field(default_factory=list)          # unique display names
     data_rows: list = field(default_factory=list)         # aligned lead+analyte
+    source_file: str = ""                     # set by the caller; written to every output row
 
 
 # --------------------------------------------------------------------------
@@ -371,9 +372,9 @@ def parse_text(text: str, forced_delim: str | None = None) -> ParsedSif:
 def to_wide_csv(p: ParsedSif) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(list(p.lead_col_names) + list(p.analytes))
+    w.writerow(["source_file"] + list(p.lead_col_names) + list(p.analytes))
     for row in p.data_rows:
-        w.writerow(row)
+        w.writerow([p.source_file] + list(row))
     return buf.getvalue()
 
 
@@ -388,21 +389,21 @@ def to_long_csv(p: ParsedSif) -> str:
 
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(list(p.lead_col_names)
+    w.writerow(["source_file"] + list(p.lead_col_names)
                + ["col_index", "element", "method", "value", "units", "detection_limit", "flag"])
     for row in p.data_rows:
         lead = row[: p.n_lead_cols]
         for j in range(len(p.analytes)):
             raw = row[p.n_lead_cols + j] if (p.n_lead_cols + j) < len(row) else ""
-            w.writerow(lead + [j, at(elements, j), at(methods, j), raw,
+            w.writerow([p.source_file] + lead + [j, at(elements, j), at(methods, j), raw,
                                at(units, j), at(dls, j), result_flag(raw)])
     return buf.getvalue()
 
 
 def to_wide_df(p: ParsedSif):
     import pandas as pd
-    cols = list(p.lead_col_names) + list(p.analytes)
-    return pd.DataFrame(p.data_rows, columns=cols)
+    cols = ["source_file"] + list(p.lead_col_names) + list(p.analytes)
+    return pd.DataFrame([[p.source_file] + list(r) for r in p.data_rows], columns=cols)
 
 
 def analyte_table_df(p: ParsedSif):

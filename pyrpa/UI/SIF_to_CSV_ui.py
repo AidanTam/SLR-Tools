@@ -88,11 +88,11 @@ def _merge_wide(parsed):
                 union.append(c)
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(union)
+    w.writerow(["source_file"] + union)
     for (_, r), h in zip(parsed, headers):
         idx = {c: k for k, c in enumerate(h)}
         for row in r.data_rows:
-            w.writerow([row[idx[c]] if c in idx and idx[c] < len(row) else "" for c in union])
+            w.writerow([r.source_file] + [row[idx[c]] if c in idx and idx[c] < len(row) else "" for c in union])
     return buf.getvalue(), False
 
 
@@ -168,6 +168,7 @@ def main():
             continue
         try:
             result = sif_convert.parse_text(read_text(p), forced)
+            result.source_file = name
         except Exception as exc:
             failed.append((name, str(exc)))
             print("[FAIL]", name, "->", exc)
@@ -274,7 +275,7 @@ def _local_bundle_bytes() -> bytes:
     return buf.getvalue()
 
 
-st.title("SIF Certificate → CSV")
+st.title("CSV Files Compilation")
 st.markdown(
     "Convert assay-lab **SIF certificates** (the Standard Interchange Format "
     "files from ALS, SGS, Bureau Veritas, Intertek, etc.) into clean CSV. "
@@ -422,7 +423,9 @@ def _stack_csv(csv_strings) -> str:
 results, errors = [], []
 for up in uploaded:
     try:
-        results.append((up.name, sif_convert.parse_text(_decode(up.getvalue()), forced_delim)))
+        parsed_file = sif_convert.parse_text(_decode(up.getvalue()), forced_delim)
+        parsed_file.source_file = up.name
+        results.append((up.name, parsed_file))
     except Exception as exc:  # noqa: BLE001 — report per file, keep going
         errors.append((up.name, str(exc)))
 
@@ -462,12 +465,13 @@ if multi:
                     union.append(col)
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow(union)
+        writer.writerow(["source_file"] + union)
         for _, p in results:
             pos = {col: i for i, col in enumerate(list(p.lead_col_names) + list(p.analytes))}
             for row in p.data_rows:
                 writer.writerow(
-                    [row[pos[c]] if c in pos and pos[c] < len(row) else "" for c in union]
+                    [p.source_file]
+                    + [row[pos[c]] if c in pos and pos[c] < len(row) else "" for c in union]
                 )
         wide_combined = buf.getvalue()
 

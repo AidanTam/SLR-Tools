@@ -256,7 +256,6 @@ elif section == "Sample Tools":
         run_active_tool()
     else:
         st.markdown("## Sample Tools")
-        tool_button("SIF Certificate → CSV",  "SIF_to_CSV_ui.py")
         tool_button("Statistics",             "sample_stats_ui.py")
         tool_button("Capping Analysis",       "capping_ui_v2.py")
         tool_button("Uncapped vs Capped Plot","capped_vs_uncapped_plot_ui.py")
@@ -299,5 +298,6 @@ elif section == "Data Validation":
         run_active_tool()
     else:
         st.markdown("## Data Validation")
+        tool_button("CSV Files Compilation",  "SIF_to_CSV_ui.py")
         tool_button("Data Verification Tool", "data_verification_ui.py")
         tool_button("Drill Hole Comparison",  "Get_Nearest_ui.py")
