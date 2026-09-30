@@ -1,0 +1,24 @@
+# Configuration for the NI 43-101 compliance checker.
+# Everything runs locally against an Ollama server. No data leaves the machine.
+
+ollama:
+  host: http://localhost:11434
+  chat_model: qwen2.5:7b-instruct   # verdict engine; fits GTX 1060 6GB at Q4
+  embed_model: nomic-embed-text     # retrieval embeddings (274MB)
+  temperature: 0                    # deterministic-as-possible verdicts
+  request_timeout: 600              # seconds; local generation can be slow
+
+retrieval:
+  chunk_size: 1200        # characters per chunk
+  chunk_overlap: 150      # character overlap between chunks on the same page
+  top_k: 6                # how many chunks to feed the model per criterion
+  max_context_chars: 6500 # hard cap on excerpt text sent to the model
+  item_boost: 0.15        # similarity bonus for chunks in the mapped NI 43-101 Item
+
+checklist:
+  use_llm_extraction: true  # use the LLM to turn messy checklist text into atomic criteria
+                            # set false to treat each bullet/table row as one criterion
+
+cache:
+  enabled: true             # cache report embeddings so re-runs (new checklist) are fast
+  dir: output/.cache

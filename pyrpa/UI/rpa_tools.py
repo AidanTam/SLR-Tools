@@ -197,7 +197,7 @@ with 3.12+ instead.
 
 st.sidebar.divider()
 
-SECTIONS = ["Home", "Plotting Tools", "Sample Tools", "Block Model Tools", "Geostats Tools", "QA/QC", "Data Validation"]
+SECTIONS = ["Home", "Plotting Tools", "Sample Tools", "Block Model Tools", "Geostats Tools", "QA/QC", "Data Validation", "Reporting"]
 section = st.sidebar.radio("", SECTIONS)
 
 if 'active_tool' not in st.session_state:
@@ -301,3 +301,11 @@ elif section == "Data Validation":
         tool_button("CSV Files Compilation",  "SIF_to_CSV_ui.py")
         tool_button("Data Verification Tool", "data_verification_ui.py")
         tool_button("Drill Hole Comparison",  "Get_Nearest_ui.py")
+
+# ── Reporting ─────────────────────────────────────────────────────────────────
+elif section == "Reporting":
+    if st.session_state.active_tool:
+        run_active_tool()
+    else:
+        st.markdown("## Reporting")
+        tool_button("NI 43-101 Compliance Check", "NI43101_Compliance_ui.py")

@@ -1,6 +1,7 @@
 # Requires Python 3.12 or newer: numpy 2.5.x and pandas 3.x publish no
 # wheels for 3.11 and below, so pip fails to resolve them there.
 docxtpl==0.16.4
+PyMuPDF==1.28.2
 matplotlib==3.11.0
 seaborn==0.13.2
 numpy==2.5.0
