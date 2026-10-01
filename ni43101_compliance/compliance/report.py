@@ -9,6 +9,8 @@ from typing import List
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 
 from .models import (
@@ -33,12 +35,56 @@ def _group_sort_key(item_id: str, item_title: str):
         return (3, 0, item_title)
     return (2, 0, item_title)
 
+# SLR brand palette (from the SLR report theme).
+_SLR_GREEN = RGBColor(0x3C, 0x53, 0x3C)
+_SLR_DEEP = RGBColor(0x26, 0x33, 0x26)
+_SLR_OLIVE = RGBColor(0x66, 0x75, 0x45)
+_SLR_HEADER_FILL = "3C533C"
+_SLR_BAND_FILL = "EEF7DB"
+_WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+
+
+def _shade(cell, hex_fill: str) -> None:
+    tc_pr = cell._tc.get_or_add_tcPr()
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), hex_fill)
+    tc_pr.append(shd)
+
+
+def _header_row(table, labels) -> None:
+    """SLR-green header row with white bold labels."""
+    for cell, label in zip(table.rows[0].cells, labels):
+        _shade(cell, _SLR_HEADER_FILL)
+        run = cell.paragraphs[0].add_run(label)
+        run.bold = True
+        run.font.color.rgb = _WHITE
+
+
+def _remove_title_border(doc) -> None:
+    """Word's built-in Title style has a blue rule under it."""
+    ppr = doc.styles["Title"].element.pPr
+    if ppr is not None:
+        for bdr in ppr.findall(qn("w:pBdr")):
+            ppr.remove(bdr)
+
+
+def _brand_heading(doc, text: str, level: int):
+    h = doc.add_heading(text, level=level)
+    for run in h.runs:
+        run.font.color.rgb = _SLR_GREEN if level < 2 else _SLR_OLIVE
+    return h
+
+
+# Greens and black only. Failures stand out as a black cell with white text
+# (see _style_status_cell); passes are green.
 _STATUS_COLOR = {
-    STATUS_COMPLIANT: RGBColor(0x1E, 0x7A, 0x34),      # green
-    STATUS_PARTIAL: RGBColor(0xB8, 0x86, 0x00),        # amber
-    STATUS_NON_COMPLIANT: RGBColor(0xC0, 0x28, 0x28),  # red
-    STATUS_NOT_ADDRESSED: RGBColor(0x60, 0x60, 0x60),  # grey
-    STATUS_NOT_APPLICABLE: RGBColor(0x3E, 0x6B, 0x4A),  # muted green: a pass, not a finding
+    STATUS_COMPLIANT: _SLR_OLIVE,                    # SLR olive green
+    STATUS_PARTIAL: _SLR_DEEP,                        # deep green, bold
+    STATUS_NON_COMPLIANT: _WHITE,                    # on a black cell
+    STATUS_NOT_ADDRESSED: RGBColor(0, 0, 0),          # black
+    STATUS_NOT_APPLICABLE: _SLR_GREEN,                 # a pass, not a finding
 }
 _STATUS_ORDER = [
     STATUS_NON_COMPLIANT,
@@ -57,8 +103,9 @@ def write_report(
     out_path: str,
 ) -> None:
     doc = Document()
+    _remove_title_border(doc)
 
-    doc.add_heading("NI 43-101 Compliance Review", level=0)
+    _brand_heading(doc, "NI 43-101 Compliance Review", 0)
     meta = doc.add_paragraph()
     meta.add_run("Report reviewed: ").bold = True
     meta.add_run(report_name + "\n")
@@ -72,7 +119,7 @@ def write_report(
     _add_summary(doc, findings)
     _add_disclaimer(doc)
 
-    doc.add_heading("Detailed Findings", level=1)
+    _brand_heading(doc, "Detailed Findings", 1)
     # Group by NI 43-101 Item (front matter first, Items 1-27 in order,
     # certificates/consistency checks after, unmapped criteria last).
     grouped = {}
@@ -85,13 +132,10 @@ def write_report(
 
     for item_id in sorted(grouped, key=lambda k: _group_sort_key(k, titles[k])):
         item_title = titles[item_id]
-        doc.add_heading(item_title, level=2)
+        _brand_heading(doc, item_title, 2)
         table = doc.add_table(rows=1, cols=3)
-        table.style = "Light Grid Accent 1"
-        hdr = table.rows[0].cells
-        hdr[0].paragraphs[0].add_run("Criterion").bold = True
-        hdr[1].paragraphs[0].add_run("Status").bold = True
-        hdr[2].paragraphs[0].add_run("Evidence & Rationale").bold = True
+        table.style = "Table Grid"
+        _header_row(table, ["Criterion", "Status", "Evidence & Rationale"])
 
         for f in grouped[item_id]:
             row = table.add_row().cells
@@ -101,17 +145,21 @@ def write_report(
             run = status_p.add_run(f.status)
             run.bold = True
             run.font.color.rgb = _STATUS_COLOR.get(f.status, RGBColor(0, 0, 0))
+            if f.status == STATUS_NON_COMPLIANT:
+                _shade(row[1], "000000")
             method_label = "Automated check" if f.method == "python" else f"Model, conf. {f.confidence:.0%}" if f.confidence else "Model"
             tag = status_p.add_run(f"\n({method_label})")
             tag.font.size = Pt(8)
-            tag.font.color.rgb = RGBColor(0x60, 0x60, 0x60)
+            tag.font.color.rgb = (
+                _WHITE if f.status == STATUS_NON_COMPLIANT else RGBColor(0x60, 0x60, 0x60)
+            )
 
             cell = row[2]
             cell.text = ""
             if f.error:
                 p = cell.paragraphs[0]
                 r = p.add_run(f"ERROR: {f.error}")
-                r.font.color.rgb = RGBColor(0xC0, 0x28, 0x28)
+                r.font.bold = True
                 continue
             if f.rationale:
                 cell.paragraphs[0].add_run(f.rationale)
@@ -130,14 +178,13 @@ def write_report(
 
 
 def _add_summary(doc: Document, findings: List[Finding]) -> None:
-    doc.add_heading("Summary", level=1)
+    _brand_heading(doc, "Summary", 1)
     counts = Counter(f.status for f in findings)
     total = len(findings)
 
     table = doc.add_table(rows=1, cols=2)
-    table.style = "Light List Accent 1"
-    table.rows[0].cells[0].paragraphs[0].add_run("Status").bold = True
-    table.rows[0].cells[1].paragraphs[0].add_run("Count").bold = True
+    table.style = "Table Grid"
+    _header_row(table, ["Status", "Count"])
     for status in _STATUS_ORDER:
         row = table.add_row().cells
         r = row[0].paragraphs[0].add_run(status)
@@ -145,6 +192,8 @@ def _add_summary(doc: Document, findings: List[Finding]) -> None:
         pct = f" ({counts.get(status, 0) / total:.0%})" if total else ""
         row[1].paragraphs[0].add_run(f"{counts.get(status, 0)}{pct}")
     total_row = table.add_row().cells
+    for c in total_row:
+        _shade(c, _SLR_BAND_FILL)
     total_row[0].paragraphs[0].add_run("Total criteria").bold = True
     total_row[1].paragraphs[0].add_run(str(total)).bold = True
 
