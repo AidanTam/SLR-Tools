@@ -136,7 +136,10 @@ _REF_STOP_RE = re.compile(
     r"|^\s*date\s+and\s+signature"
     r"|certificate\s+of\s+qualified\s+person"
     r"|consents?\s+of\s+qualified\s+person"
-    r"|^\s*appendi(?:x|ces)\b",
+    # A bare "Appendix J" line or an all-caps "APPENDIX" heading; a mixed-case
+    # line like "Appendix J – Photos.pdf" is a wrapped reference entry.
+    r"|^\s*appendi(?:x|ces)(?:\s+[A-Z0-9]{1,3})?\s*$"
+    r"|^\s*(?-i:APPENDIX|APPENDICES)\b",
     re.IGNORECASE | re.MULTILINE,
 )
 _REF_BLOCK_MAX_PAGES = 15  # safety cap if no stop heading is ever found
