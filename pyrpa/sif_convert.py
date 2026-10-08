@@ -43,8 +43,18 @@ FIXED_HEADER_LABELS = {
     "LABORATORY": "laboratory",
 }
 
-# Delimited-format header row labels, top to bottom.
+# Delimited-format header row labels, top to bottom. Only a fallback: rows are
+# first classified by content (see _classify_header_row), because labs disagree
+# on the order (ALS CSVs run method / element / units).
 DELIM_HEADER_LABELS = ["element", "units", "method", "detection_limit"]
+
+UNIT_TOKENS = {
+    "%", "pct", "ppm", "ppb", "ppt", "g/t", "gpt", "oz/t", "opt", "mg/kg",
+    "ug/g", "µg/g", "ug/kg", "µg/kg", "mg/l", "ug/l", "kg", "g", "mg",
+}
+
+# Lab method codes: ME-MS81, Au-AA23, OA-GRA05, TOT-ICP06, ...
+METHOD_CODE_RE = re.compile(r"^[A-Za-z]{2,}-[A-Za-z0-9]+$")
 
 SAMPLE_ID_PATTERNS = [
     r"^[A-Za-z]{1,6}[-_ ]?\d{2,}$",
@@ -119,6 +129,39 @@ def _dedupe(names: list) -> list:
             seen[name] = 0
         out.append(name)
     return out
+
+
+def column_name(element: str, units: str, method: str, j: int) -> str:
+    """Analyte column name as element_units_method, e.g. Ba_ppm_ME-MS81.
+
+    Missing parts are skipped; a column with none of them becomes col_<n>.
+    """
+    parts = [(s or "").strip() for s in (element, units, method)]
+    return "_".join(s for s in parts if s) or f"col_{j+1}"
+
+
+def _column_names(analyte_headers: dict, n_cols: int) -> list:
+    def at(label, j):
+        seq = analyte_headers.get(label, [])
+        return seq[j] if j < len(seq) else ""
+    return _dedupe([column_name(at("element", j), at("units", j), at("method", j), j)
+                    for j in range(n_cols)])
+
+
+def _classify_header_row(cells: list) -> str | None:
+    """Guess which header row this is from its analyte cells, or None."""
+    vals = [c.strip() for c in cells if (c or "").strip()]
+    if not vals:
+        return None
+    def share(pred):
+        return sum(1 for v in vals if pred(v)) / len(vals)
+    if share(lambda v: v.lower() in UNIT_TOKENS) >= 0.8:
+        return "units"
+    if share(lambda v: METHOD_CODE_RE.match(v) is not None) >= 0.8:
+        return "method"
+    if share(_is_number) >= 0.8:
+        return "detection_limit"
+    return "element"
 
 
 def result_flag(raw: str) -> str:
@@ -217,17 +260,7 @@ def parse_fixed_width(lines: list) -> ParsedSif:
             break  # first data row
     data_start = i
 
-    elements = analyte_headers.get("element", [f"col_{j+1}" for j in range(n_cols)])
-    methods = analyte_headers.get("method", [""] * n_cols)
-
-    # Unique, human-readable column names: "element [method]".
-    display = []
-    for j in range(n_cols):
-        el = elements[j] if j < len(elements) else ""
-        me = methods[j] if j < len(methods) else ""
-        name = f"{el} [{me}]" if (el and me) else (el or me or f"col_{j+1}")
-        display.append(name)
-    display = _dedupe(display)
+    display = _column_names(analyte_headers, n_cols)
 
     lead_names = ["certificate", "sample_id"]
     data_rows = []
@@ -323,18 +356,28 @@ def parse_delimited(text: str, forced_delim: str | None = None) -> ParsedSif:
         label_row = header_block.pop()
         lead_names = [(c.strip() or f"lead_{k}") for k, c in enumerate(label_row[:n_lead])]
 
+    # Label each row by its content; rows that can't be told apart, or whose
+    # role is already taken, get the remaining labels in the default order.
+    block_cells = [[col(hrow, n_lead + j) for j in range(n_analytes)] for hrow in header_block]
+    roles = [_classify_header_row(cells) for cells in block_cells]
+    taken = set()
+    for k, role in enumerate(roles):
+        if role in taken:
+            roles[k] = None
+        elif role:
+            taken.add(role)
+    spare = iter(l for l in DELIM_HEADER_LABELS if l not in taken)
     analyte_headers = {}
-    for off, hrow in enumerate(header_block):
-        label = DELIM_HEADER_LABELS[off] if off < len(DELIM_HEADER_LABELS) else f"header_{off}"
-        analyte_headers[label] = [col(hrow, n_lead + j) for j in range(n_analytes)]
+    for off, cells in enumerate(block_cells):
+        label = roles[off] or next(spare, f"header_{off}")
+        analyte_headers[label] = cells
 
-    if "element" in analyte_headers and any(analyte_headers["element"]):
-        analytes = analyte_headers["element"]
-    elif label_row is not None:
-        analytes = [col(label_row, n_lead + j) for j in range(n_analytes)]
-    else:
-        analytes = [f"analyte_{j+1}" for j in range(n_analytes)]
-    analytes = _dedupe(analytes)
+    if not any(analyte_headers.get("element", [])):
+        if label_row is not None:
+            analyte_headers["element"] = [col(label_row, n_lead + j) for j in range(n_analytes)]
+        elif not any(analyte_headers.get(k) for k in ("units", "method")):
+            analyte_headers["element"] = [f"analyte_{j+1}" for j in range(n_analytes)]
+    analytes = _column_names(analyte_headers, n_analytes)
 
     data_rows = []
     for row in rows[data_start:]:
