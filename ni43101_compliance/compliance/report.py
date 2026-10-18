@@ -189,6 +189,9 @@ def _add_summary(doc: Document, findings: List[Finding]) -> None:
         row = table.add_row().cells
         r = row[0].paragraphs[0].add_run(status)
         r.font.color.rgb = _STATUS_COLOR[status]
+        if status == STATUS_NON_COMPLIANT:
+            # White text, so it needs the black cell the findings table uses.
+            _shade(row[0], "000000")
         pct = f" ({counts.get(status, 0) / total:.0%})" if total else ""
         row[1].paragraphs[0].add_run(f"{counts.get(status, 0)}{pct}")
     total_row = table.add_row().cells
