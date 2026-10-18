@@ -12,14 +12,18 @@ from scipy.stats import variation
 st.set_page_config(layout="wide")
 
 # File upload and user inputs
+# The tool compares any two paired datasets (not only blast holes vs drill
+# holes), so the labels below follow the names typed into Data Type 1 / 2.
+# Labels that include those names get fixed keys: Streamlit keys a widget by
+# its label otherwise, and renaming a dataset would reset every selection.
 BHS_file = st.sidebar.file_uploader("Dataset 1")
-BHS_type = st.sidebar.text_input("Data Type 1", 'BHS' )
-BHS_color = st.sidebar.color_picker("Pick A Color for "+BHS_type, "#667545")
+BHS_type = st.sidebar.text_input("Data Type 1", 'Dataset 1' )
+BHS_color = st.sidebar.color_picker("Pick A Color for "+BHS_type, "#667545", key="color_1")
 DDH_file = st.sidebar.file_uploader("Dataset 2")
-DDH_type = st.sidebar.text_input("Data Type 2", 'DDH' )
-DDH_color = st.sidebar.color_picker("Pick A Color for "+DDH_type, "#D6F591")
-GradecapBHS = st.sidebar.number_input("Capping Value for Blast holes", value=999999.00)
-GradecapDDH = st.sidebar.number_input("Capping Value for Drill holes", value=999999.00)
+DDH_type = st.sidebar.text_input("Data Type 2", 'Dataset 2' )
+DDH_color = st.sidebar.color_picker("Pick A Color for "+DDH_type, "#D6F591", key="color_2")
+GradecapBHS = st.sidebar.number_input("Capping Value for "+BHS_type, value=999999.00, key="cap_1")
+GradecapDDH = st.sidebar.number_input("Capping Value for "+DDH_type, value=999999.00, key="cap_2")
 table1,table2= st.tabs(['tab1','tab2'])
 if BHS_file and DDH_file:
     with table1:
@@ -45,14 +49,14 @@ if BHS_file and DDH_file:
         DDH.reset_index(drop=True, inplace=True)
 
         # st.data_editor(BHS)
-        BHS_Grade_Field = st.sidebar.selectbox("Select the Blast Hole Grade Field ", BHS.columns)
-        DDH_Grade_Field = st.sidebar.selectbox("Select the Drill Hole Grade Field ", DDH.columns)
-        BHS_len_Field = st.sidebar.selectbox("Select the Blast Hole Length Field ", BHS.columns)
-        DDH_len_Field = st.sidebar.selectbox("Select the Drill Hole Length Field ", DDH.columns)
+        BHS_Grade_Field = st.sidebar.selectbox("Select the "+BHS_type+" Grade Field ", BHS.columns, key="grade_1")
+        DDH_Grade_Field = st.sidebar.selectbox("Select the "+DDH_type+" Grade Field ", DDH.columns, key="grade_2")
+        BHS_len_Field = st.sidebar.selectbox("Select the "+BHS_type+" Length Field ", BHS.columns, key="len_1")
+        DDH_len_Field = st.sidebar.selectbox("Select the "+DDH_type+" Length Field ", DDH.columns, key="len_2")
 
-        DDH_coordinate_fields = st.sidebar.multiselect("Select the Drill hole coordinates fields", DDH.columns)
-        BHS_coordinate_fields = st.sidebar.multiselect("Select the Blast hole coordinates fields", BHS.columns)
-        DDH_from_to = st.sidebar.multiselect("Select the Drill ID, From, To Fields", DDH.columns)
+        DDH_coordinate_fields = st.sidebar.multiselect("Select the "+DDH_type+" coordinates fields", DDH.columns, key="coords_2")
+        BHS_coordinate_fields = st.sidebar.multiselect("Select the "+BHS_type+" coordinates fields", BHS.columns, key="coords_1")
+        DDH_from_to = st.sidebar.multiselect("Select the "+DDH_type+" ID, From, To Fields", DDH.columns, key="from_to_2")
 
         if DDH_Grade_Field:
             element = st.sidebar.text_input("element", DDH_Grade_Field )
@@ -62,11 +66,11 @@ if BHS_file and DDH_file:
         # Bail out with guidance until they're chosen, otherwise `tree`/`indices`
         # are never defined and the tool throws a NameError right after upload.
         if not (DDH_coordinate_fields and BHS_coordinate_fields):
-            st.info("Select the drill hole and blast hole coordinate fields in the sidebar to run the comparison.")
+            st.info("Select the "+BHS_type+" and "+DDH_type+" coordinate fields in the sidebar to run the comparison.")
             st.stop()
 
         if len(DDH_coordinate_fields) != len(BHS_coordinate_fields):
-            st.warning("Pick the same number of coordinate fields for drill holes and blast holes.")
+            st.warning("Pick the same number of coordinate fields for "+BHS_type+" and "+DDH_type+".")
             st.stop()
 
         tree = cKDTree(DDH[DDH_coordinate_fields])
@@ -85,7 +89,7 @@ if BHS_file and DDH_file:
             # row, so guard against an empty selection instead of silently
             # returning one row.
             if not DDH_from_to:
-                st.warning("Select the Drill ID, From, To fields in the sidebar to use One to One matching.")
+                st.warning("Select the "+DDH_type+" ID, From, To fields in the sidebar to use One to One matching.")
                 st.stop()
             result_df = result_df.sort_values(by='distance').drop_duplicates(subset=DDH_from_to, keep='first')
         # result_df.to_csv(r'C:\Application\Get_Nearest\output\Dorota.csv')
@@ -377,7 +381,7 @@ if BHS_file and DDH_file:
                 dh_au_weighted_sum = (Filter_data_dh[DDH_len_Field] * Filter_data_dh[DDH_Grade_Field]).sum()
                 dh_Au_G_t = dh_au_weighted_sum / dh_len_sum
                 bh_Au_G_t = bh_au_weighted_sum / bh_len_sum
-                data = {'Drill Hole Type': [BHS_type,DDH_type, 'Ratio'],
+                data = {'Dataset': [BHS_type,DDH_type, 'Ratio'],
                                     'Meters': [bh_len_sum, dh_len_sum, (dh_len_sum/bh_len_sum)*100 ],
                                     element+' '+ unit: [bh_Au_G_t, dh_Au_G_t,(dh_Au_G_t/bh_Au_G_t)*100],
                                     element+' '+ unit+'*meters': [bh_au_weighted_sum, dh_au_weighted_sum,(dh_au_weighted_sum/bh_au_weighted_sum)*100],
@@ -395,8 +399,8 @@ if BHS_file and DDH_file:
         )
 
         col4,col5 = st.columns(2)
-        ddh_df = histdf[histdf['Drill Hole Type']==DDH_type]
-        bhs_df = histdf[histdf['Drill Hole Type']==BHS_type] 
+        ddh_df = histdf[histdf['Dataset']==DDH_type]
+        bhs_df = histdf[histdf['Dataset']==BHS_type] 
         col4.dataframe(ddh_df)
         col5.dataframe(bhs_df)
         # cutoff_ranges = sorted(set(ddh_df['Cutoff']).union(set(bhs_df['Cutoff'])))
