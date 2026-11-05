@@ -656,9 +656,7 @@ if "cfg_loaded" not in st.session_state:
     st.session_state.cfg_loaded = False
 
 cfg_file = st.sidebar.file_uploader("🔄 Load config (JSON)", ["json"])
-if cfg_file and not st.session_state.cfg_loaded:
-    st.session_state.update(json.load(cfg_file))
-    st.session_state.cfg_loaded = True
+if common.load_saved_state(cfg_file, key="dups"):
     st.success("Config loaded!")
 
 # ───────── 2) data load ─────────

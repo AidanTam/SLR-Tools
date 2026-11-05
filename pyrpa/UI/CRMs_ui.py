@@ -734,10 +734,7 @@ def _idx_or(col, col_list, fallback=0):
 st.set_page_config(layout="wide")
 
 saved_progress_file = st.sidebar.file_uploader("Load Progress", type=['json'])
-if saved_progress_file is not None:
-    saved_state = json.load(saved_progress_file)
-    deserialized_state = deserialize_session_state(saved_state)
-    st.session_state.update(deserialized_state)
+if common.load_saved_state(saved_progress_file, key="crms", transform=deserialize_session_state):
     st.success("Progress loaded!")
     st.info("Please upload the same data file used in the saved progress.")
 

@@ -1,4 +1,5 @@
 import glob
+import json
 import math
 import re
 import pyrpa
@@ -303,6 +304,42 @@ def offer_wide_reshape(df, key):
 
     return df
 
+# Saved-state keys that describe the app shell or this one load rather than the
+# user's work, so restoring them would switch tools or skew the load tracking.
+_NON_RESTORABLE_KEYS = {"authenticated", "active_tool", "active_section", "cfg_loaded"}
+# Streamlit raises if a button's key is assigned through session_state, and
+# these get saved along with everything else whenever the button has rendered.
+_NON_RESTORABLE_SUFFIXES = ("_wide_reshape_btn", "_wide_skip_btn",
+                            "_restored_file_id", "_mapping_restored")
+
+def load_saved_state(uploaded, key, transform=None):
+    """Restore a saved-progress JSON into session_state. Returns True on the
+    run the file was applied, so the caller can show a confirmation.
+
+    Applies each uploaded file once: the uploader keeps returning the file on
+    every rerun, and re-applying it would undo whatever the user changed since.
+    Uploading again (even the same file) gets a new file_id and applies again.
+
+    `key` scopes the tracking the same way as sync_column_mapping(), which this
+    tells to keep the saved column mapping rather than re-guess it. `transform`
+    optionally converts the parsed values, e.g. ISO strings back into dates.
+    """
+    id_key = key + "_restored_file_id"
+    if uploaded is None or st.session_state.get(id_key) == uploaded.file_id:
+        return False
+
+    saved = json.load(uploaded)
+    if transform is not None:
+        saved = transform(saved)
+    st.session_state.update({
+        k: v for k, v in saved.items()
+        if k not in _NON_RESTORABLE_KEYS and not k.endswith(_NON_RESTORABLE_SUFFIXES)
+    })
+    st.session_state[id_key] = uploaded.file_id
+    st.session_state[key + "_mapping_restored"] = True
+    st.session_state["cfg_loaded"] = True
+    return True
+
 def sync_column_mapping(df, key, field_map):
     """Keep a tool's column-mapping selectboxes correct whenever the
     uploaded data's columns change -- a fresh upload with different columns,
@@ -314,6 +351,11 @@ def sync_column_mapping(df, key, field_map):
     auto_map_columns() and *writes* the result into session_state. A no-op
     (besides updating the fingerprint) when columns haven't changed, so a
     user's manual override of a mapping survives reruns of the same file.
+
+    After load_saved_state(), the first call keeps every saved mapping whose
+    column exists in df and only guesses the rest, so resuming doesn't lose the
+    user's picks. The restored fingerprint can't be trusted for this: JSON turns
+    the tuple into a list, which never compares equal to the current columns.
 
     This write is necessary, not just a nice-to-have: Streamlit selectboxes
     don't re-validate an existing session_state value against a new options
@@ -329,12 +371,16 @@ def sync_column_mapping(df, key, field_map):
     """
     fp_key = key + "_cols_fp"
     fingerprint = tuple(df.columns)
-    if st.session_state.get(fp_key) == fingerprint:
+    restored = st.session_state.pop(key + "_mapping_restored", False)
+    if not restored and st.session_state.get(fp_key) == fingerprint:
         return
     st.session_state[fp_key] = fingerprint
 
+    valid = set(df.columns) | {"None"}
     guess = auto_map_columns(df.columns, list(set(field_map.values())))
     for map_key, field_key in field_map.items():
+        if restored and st.session_state.get(map_key) in valid:
+            continue
         if guess.get(field_key):
             st.session_state[map_key] = guess[field_key]
         else:

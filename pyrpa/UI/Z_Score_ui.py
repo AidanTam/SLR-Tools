@@ -354,8 +354,7 @@ def shuffled_palette(base="tab10", n=10, seed=0):
 
 # ───────── config load ─────────
 cfg_up = st.sidebar.file_uploader("🔄 Load config (JSON)", ["json"])
-if cfg_up and not st.session_state.get("cfg_loaded"):
-    st.session_state.update(json.load(cfg_up)); st.session_state.cfg_loaded=True
+if common.load_saved_state(cfg_up, key="zscore"):
     st.success("Config loaded!")
 
 # ───────── data load ─────────

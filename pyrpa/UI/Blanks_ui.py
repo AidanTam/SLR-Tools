@@ -352,8 +352,8 @@ def safe_defaults(defs, opts): return [d for d in (defs or []) if d in opts]
 
 # ───────── config load ─────────
 cfg_file = st.sidebar.file_uploader("🔄 Load config (JSON)", ["json"])
-if cfg_file and not st.session_state.get("cfg_loaded"):
-    st.session_state.update(json.load(cfg_file)); st.session_state.cfg_loaded=True; st.success("Config loaded!")
+if common.load_saved_state(cfg_file, key="blanks"):
+    st.success("Config loaded!")
 
 # ───────── data load ─────────
 csv_bytes = st.sidebar.file_uploader("📂 Upload data (CSV or Excel)", ["csv","xlsx","xls"], key="csv_bytes")
