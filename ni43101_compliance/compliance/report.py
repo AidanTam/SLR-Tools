@@ -15,6 +15,7 @@ from docx.shared import Pt, RGBColor
 
 from .models import (
     STATUS_COMPLIANT,
+    STATUS_NEEDS_REVIEW,
     STATUS_NON_COMPLIANT,
     STATUS_NOT_ADDRESSED,
     STATUS_NOT_APPLICABLE,
@@ -41,6 +42,7 @@ _SLR_DEEP = RGBColor(0x26, 0x33, 0x26)
 _SLR_OLIVE = RGBColor(0x66, 0x75, 0x45)
 _SLR_HEADER_FILL = "3C533C"
 _SLR_BAND_FILL = "EEF7DB"
+_SLR_LIME_FILL = "A9C272"   # "Needs Review": a flag for a person, not a verdict
 _WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 
 
@@ -83,11 +85,13 @@ _STATUS_COLOR = {
     STATUS_COMPLIANT: _SLR_OLIVE,                    # SLR olive green
     STATUS_PARTIAL: _SLR_DEEP,                        # deep green, bold
     STATUS_NON_COMPLIANT: _WHITE,                    # on a black cell
+    STATUS_NEEDS_REVIEW: RGBColor(0, 0, 0),           # black, on a lime cell
     STATUS_NOT_ADDRESSED: RGBColor(0, 0, 0),          # black
     STATUS_NOT_APPLICABLE: _SLR_GREEN,                 # a pass, not a finding
 }
 _STATUS_ORDER = [
     STATUS_NON_COMPLIANT,
+    STATUS_NEEDS_REVIEW,
     STATUS_PARTIAL,
     STATUS_NOT_ADDRESSED,
     STATUS_NOT_APPLICABLE,
@@ -147,6 +151,8 @@ def write_report(
             run.font.color.rgb = _STATUS_COLOR.get(f.status, RGBColor(0, 0, 0))
             if f.status == STATUS_NON_COMPLIANT:
                 _shade(row[1], "000000")
+            elif f.status == STATUS_NEEDS_REVIEW:
+                _shade(row[1], _SLR_LIME_FILL)
             method_label = "Automated check" if f.method == "python" else f"Model, conf. {f.confidence:.0%}" if f.confidence else "Model"
             tag = status_p.add_run(f"\n({method_label})")
             tag.font.size = Pt(8)
@@ -192,7 +198,9 @@ def _add_summary(doc: Document, findings: List[Finding]) -> None:
         if status == STATUS_NON_COMPLIANT:
             # White text, so it needs the black cell the findings table uses.
             _shade(row[0], "000000")
-        pct = f" ({counts.get(status, 0) / total:.0%})" if total else ""
+        elif status == STATUS_NEEDS_REVIEW:
+            _shade(row[0], _SLR_LIME_FILL)
+        pct =f" ({counts.get(status, 0) / total:.0%})" if total else ""
         row[1].paragraphs[0].add_run(f"{counts.get(status, 0)}{pct}")
     total_row = table.add_row().cells
     for c in total_row:

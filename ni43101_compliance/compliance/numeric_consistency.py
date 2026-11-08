@@ -37,7 +37,7 @@ from .models import (
     STATUS_COMPLIANT,
     STATUS_NON_COMPLIANT,
     STATUS_NOT_ADDRESSED,
-    STATUS_PARTIAL,
+    STATUS_NEEDS_REVIEW,
     Criterion,
     Finding,
     Page,
@@ -51,7 +51,7 @@ ITEM_TITLE = "Cross-Document Consistency (Automated)"
 # Below this many checkable Summary figures the result says nothing useful.
 MIN_FIGURES = 5
 # Fraction of unsupported figures above which the check is Non-Compliant
-# rather than Partial. Derived figures legitimately lack a counterpart, so a
+# rather than Needs Review. Derived figures legitimately lack a counterpart, so a
 # few misses are only "review these".
 NON_COMPLIANT_FRACTION = 0.30
 
@@ -321,7 +321,7 @@ def check_summary_numbers(
         )
 
     fraction = len(missing) / checked
-    status = STATUS_NON_COMPLIANT if fraction > NON_COMPLIANT_FRACTION else STATUS_PARTIAL
+    status = STATUS_NON_COMPLIANT if fraction > NON_COMPLIANT_FRACTION else STATUS_NEEDS_REVIEW
     shown = missing[:12]
     lines = [f"p.{f.page}: {f.text}" for f in shown]
     more = f" (+{len(missing) - len(shown)} more)" if len(missing) > len(shown) else ""

@@ -12,7 +12,7 @@ from compliance.models import (
     STATUS_NON_COMPLIANT,
     STATUS_NOT_ADDRESSED,
     STATUS_NOT_APPLICABLE,
-    STATUS_PARTIAL,
+    STATUS_NEEDS_REVIEW,
     Page,
 )
 from compliance.structural_checks import (
@@ -54,7 +54,7 @@ class TestTableOfContents(unittest.TestCase):
 
     def test_heading_without_leaders_is_partial(self):
         f = check_table_of_contents(pages("Cover", "TABLE OF CONTENTS\nSee attached."), {})
-        self.assertEqual(f.status, STATUS_PARTIAL)
+        self.assertEqual(f.status, STATUS_NEEDS_REVIEW)
 
 
 class TestReferencesList(unittest.TestCase):
@@ -183,8 +183,14 @@ class TestCostTable(unittest.TestCase):
 class TestOrchestrator(unittest.TestCase):
     def test_all_checks_run_and_tagged_python(self):
         findings = run_structural_checks(pages("Just some report text."), {}, report_path=None)
-        self.assertEqual(len(findings), 9)
+        ids = {f.criterion.id for f in findings}
+        # The original nine checks always run; the newer multi-finding ones add more.
+        self.assertGreaterEqual(len(findings), 9)
+        for expected in ("PY-REFS", "PY-SUMMARY-NUMBERS", "PY-XREF-FIGTAB", "PY-DATE-ORDER",
+                         "PY-ARITH-TOTALS", "PY-CERT-CONTENT"):
+            self.assertIn(expected, ids)
         self.assertTrue(all(f.method == "python" for f in findings))
+        self.assertFalse([f for f in findings if f.criterion.id.startswith("PY-ERR")])
 
 
 # --------------------------------------------------------------------------

@@ -16,6 +16,12 @@ STATUS_NOT_ADDRESSED = "Not Addressed"
 # historical estimate is disclosed, or the report states the section is not
 # applicable). Mirrors the "N/A" option in the SLR checklist's own dropdown.
 STATUS_NOT_APPLICABLE = "Not Applicable"
+# Only the deterministic (Python) checks use this. They find something
+# suspicious but cannot tell whether it is a real error (a Total that might be
+# a table the parser misread, a price that might be used for a different
+# purpose), so a person has to decide. It is a confidence flag, not a degree
+# of compliance: the model-judged checks never return it.
+STATUS_NEEDS_REVIEW = "Needs Review"
 
 VALID_STATUSES = {
     STATUS_COMPLIANT,
