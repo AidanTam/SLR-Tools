@@ -4,6 +4,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 import streamlit as st
 import matplotlib.pyplot as plt
+from pyrpa.UI import common
 from scipy.stats import variation
 
 
@@ -24,6 +25,9 @@ DDH_type = st.sidebar.text_input("Data Type 2", 'Dataset 2' )
 DDH_color = st.sidebar.color_picker("Pick A Color for "+DDH_type, "#D6F591", key="color_2")
 GradecapBHS = st.sidebar.number_input("Capping Value for "+BHS_type, value=999999.00, key="cap_1")
 GradecapDDH = st.sidebar.number_input("Capping Value for "+DDH_type, value=999999.00, key="cap_2")
+with st.sidebar.expander("🎨 Data count line"):
+    count_color  = st.color_picker("Line colour", "#1E1E1E", key="dhc_count_color")
+    count_marker = common.marker_select("Marker", key="dhc_count_marker")
 table1,table2= st.tabs(['tab1','tab2'])
 if BHS_file and DDH_file:
     with table1:
@@ -234,7 +238,27 @@ if BHS_file and DDH_file:
 
         # fixed_xticks = [10**i for i in range(int(np.floor(np.log10(min_grade))), int(np.ceil(np.log10(max_grade))) + 1)]
         plt.xticks(fixed_xticks, [f'{tick:.1f}' if tick < 1 else f'{int(tick)}' for tick in fixed_xticks], rotation=90)  # Adjust rotation for better readability if needed
-        
+
+        # Hiding or removing bins redraws the histogram as one bar per kept bin,
+        # side by side, so no gap is left where a bin was taken out.
+        hist_counts_1, _ = np.histogram(histogramdf[BHS_Grade_Field].dropna(), bins=bins)
+        hist_counts_2, _ = np.histogram(histogramdf[DDH_Grade_Field].dropna(), bins=bins)
+        hist_labels = [f"{lo:.3g} - {hi:.3g}" for lo, hi in zip(bins[:-1], bins[1:])]
+        hist_opts = common.bucket_display_options("dhc_hist", hist_labels, noun="bins")
+        if hist_opts["hide_empty"] or hist_opts["removed"]:
+            kept_bins = common.keep_buckets(hist_labels, hist_counts_1 + hist_counts_2, hist_opts)
+            idx = [hist_labels.index(b) for b in kept_bins]
+            pos = np.arange(len(idx))
+            plt.clf()
+            plt.bar(pos, hist_counts_1[idx], width=1.0, alpha=0.5, color=BHS_color, label=BHS_type, edgecolor='black')
+            plt.bar(pos, hist_counts_2[idx], width=1.0, alpha=0.5, color=DDH_color, label=DDH_type, edgecolor='black')
+            plt.xticks(pos, kept_bins, rotation=90)
+            plt.xlabel(element+' '+ unit)
+            plt.ylabel('Data Count')
+            plt.title('Grade Distribution Comparisons '+ 'based on a distance of '+str(mindist)+' m')
+            plt.legend(loc='upper right')
+            plt.tight_layout()
+
         st.pyplot(plt)
 
         
@@ -309,20 +333,39 @@ if BHS_file and DDH_file:
         # st.data_editor(ddh_capped) 
         # st.title(BHS_type)
         # st.data_editor(bhs_capped)       # Plot BHS
-        ax3.bar(bhs_capped['Distance'], bhs_capped[element+' '+ unit], width=width, label=BHS_type, color=BHS_color, edgecolor='black', alpha=0.7)
+        dist_buckets = sorted(set(combined_df_capped['Distance']))
+        dist_labels = [f"{d:g}" for d in dist_buckets]
+        dist_totals = [combined_df_capped.loc[combined_df_capped['Distance'] == d, 'Data count'].sum()
+                       for d in dist_buckets]
+        dist_opts = common.bucket_display_options("dhc_dist", dist_labels, noun="distance buckets")
+        kept_dist = set(common.keep_buckets(dist_labels, dist_totals, dist_opts))
+        if len(kept_dist) < len(dist_labels):
+            # Kept buckets side by side, so removed ones leave no gap.
+            keep_d = [d for d, lbl in zip(dist_buckets, dist_labels) if lbl in kept_dist]
+            dist_pos = {d: k for k, d in enumerate(keep_d)}
+            bhs_capped = bhs_capped[bhs_capped['Distance'].isin(keep_d)]
+            ddh_capped = ddh_capped[ddh_capped['Distance'].isin(keep_d)]
+            combined_df_capped = combined_df_capped[combined_df_capped['Distance'].isin(keep_d)]
+            to_x = lambda col: col.map(dist_pos)
+            bar_width = width / stepdist if stepdist else 0.8
+        else:
+            to_x = lambda col: col
+            bar_width = width
+        ax3.bar(to_x(bhs_capped['Distance']), bhs_capped[element+' '+ unit], width=bar_width, label=BHS_type, color=BHS_color, edgecolor='black', alpha=0.7)
         # Plot DDH
-        ax3.bar(ddh_capped['Distance'], ddh_capped[element+' '+ unit], width=width, label=DDH_type, color=DDH_color, edgecolor='black', alpha=0.7)
+        ax3.bar(to_x(ddh_capped['Distance']), ddh_capped[element+' '+ unit], width=bar_width, label=DDH_type, color=DDH_color, edgecolor='black', alpha=0.7)
 
         # Add labels and title
         ax3.set_xlabel('Separation Distance (mts)')
         ax3.set_ylabel(element+' '+ unit)
         # ax3.set_title('(xxx deposit) gold distribution comparison: Blasthole and Drillhole vs. Distance - all data')
-        ax3.set_xticks(combined_df_capped['Distance'])
+        ax3.set_xticks(to_x(combined_df_capped['Distance']))
         ax3.set_xticklabels(combined_df_capped['Distance'].astype(int))
 
         # Create a second y-axis to plot the meters curve
         ax4 = ax3.twinx()
-        ax4.plot(ddh_capped['Distance'], ddh_capped['Data count'], color='#1E1E1E', marker='o', linestyle='--', linewidth=2, markersize=5, label='Data count')
+        ax4.plot(to_x(ddh_capped['Distance']), ddh_capped['Data count'], color=count_color, linestyle='--', linewidth=2, label='Data count',
+                 **common.line_marker_kwargs(count_marker, count_color, size=5))
         # ax4.plot(bhs_capped['Distance'], bhs_capped['Meters'], color='green', marker='o', linestyle='--', linewidth=2, markersize=5, label='Meters')
         ax4.set_ylabel('Data Count')
         ax4.set_ylim(0, combined_df_capped['Data count'].max() * 1.2)
@@ -405,6 +448,10 @@ if BHS_file and DDH_file:
         col5.dataframe(bhs_df)
         # cutoff_ranges = sorted(set(ddh_df['Cutoff']).union(set(bhs_df['Cutoff'])))
         cutoff_ranges = sorted(set(ddh_df['Cutoff']).union(set(bhs_df['Cutoff'])), key=lambda x: float(x.split(' - ')[0]))
+        cut_totals = [ddh_df.loc[ddh_df['Cutoff'] == c, 'Meters'].sum() + bhs_df.loc[bhs_df['Cutoff'] == c, 'Meters'].sum()
+                      for c in cutoff_ranges]
+        cut_opts = common.bucket_display_options("dhc_cutoff", cutoff_ranges, noun="cutoff ranges")
+        cutoff_ranges = common.keep_buckets(cutoff_ranges, cut_totals, cut_opts)
         def plot_histograms(ddh_df, bhs_df):
             fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 

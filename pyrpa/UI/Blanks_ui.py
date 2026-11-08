@@ -446,6 +446,9 @@ with st.sidebar.expander("📐 Style"):
     line_width = st.number_input("Line width",0.1,value=float(st.session_state.get("l_width",0.8)),step=0.1,format="%.2f",key="l_width")
     point_col  = st.color_picker("Point colour", st.session_state.get("p_col","#000000"), key="p_col")
     limit_col  = st.color_picker("Limit colour",  st.session_state.get("lim_col","#86A586"), key="lim_col")
+    fail_col   = st.color_picker("Fail colour",   st.session_state.get("fail_col","#FF0000"), key="fail_col")
+    point_marker = common.marker_select("Point marker", key="blanks_point_marker")
+    fail_marker  = common.marker_select("Fail marker",  key="blanks_fail_marker")
     log_y      = st.checkbox("Log Y-axis", value=st.session_state.get("log_y",False), key="log_y")
     custom_ylim = st.checkbox("Custom Y-limits", value=st.session_state.get("custom_ylim",False), key="custom_ylim")
     if custom_ylim:
@@ -454,6 +457,8 @@ with st.sidebar.expander("📐 Style"):
     else:
         y_axis_min = y_axis_max = None
     fig_size   = common.aspect_ratio_input((10,4), key="blanks_aspect")
+
+date_opts = common.date_display_options("blanks", df[date_col], calendar_axis=True) if date_col!="None" else None
 
 # ───────── Run button ─────────
 if st.sidebar.button("🚀 Run"): st.session_state.run_plots=True
@@ -477,6 +482,11 @@ for el in elems_sel:
                 sub=sub[(sub[date_col]>=start)&(sub[date_col]<end)]
 
             sub[val_col]=clean_numeric(sub[val_col]); sub=sub.dropna(subset=[val_col])
+            if date_col!="None":
+                sub=common.filter_dates(sub,date_col,date_opts).sort_values(date_col,kind="stable")
+            # Positional index, so "Sample #" / "only dates with data" x-positions
+            # line up with the fails drawn over them.
+            sub=sub.reset_index(drop=True)
             if sub.empty: continue
 
             if lim_mode=="Constant per element":
@@ -492,17 +502,23 @@ for el in elems_sel:
                 tick_count= st.slider("Date ticks",1,50, st.session_state.get(tick_key,10), key=tick_key) if date_col!="None" else None
 
                 fig,ax=plt.subplots(figsize=fig_size)
-                if date_col!="None":
-                    x=sub[date_col]; min_dt,max_dt=x.min(),x.max()
+                if date_col!="None" and date_opts["only_data"]:
+                    # Samples side by side in date order: no gaps for dates without data.
+                    x=pd.Series(range(total)); fail_x=fails.index
+                    ticks=np.unique(np.linspace(0,total-1,min(tick_count,total)).round().astype(int))
+                    ax.set_xticks(ticks)
+                    ax.set_xticklabels(sub[date_col].iloc[ticks].dt.strftime('%Y-%m-%d'),rotation=45,ha="right")
+                elif date_col!="None":
+                    x=sub[date_col]; fail_x=fails[date_col]; min_dt,max_dt=x.min(),x.max()
                     tick_dates=pd.date_range(min_dt,max_dt,periods=tick_count) if min_dt!=max_dt else [min_dt]
                     ax.set_xticks(tick_dates); ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
                     plt.setp(ax.get_xticklabels(),rotation=45,ha="right")
-                else: x=range(total); ax.set_xlabel("Sample #")
+                else: x=range(total); fail_x=fails.index; ax.set_xlabel("Sample #")
 
-                ax.scatter(x,sub[val_col],s=point_size,color=point_col,label="Values")
+                ax.scatter(x,sub[val_col],label="Values",**common.marker_kwargs(point_marker,point_col,size=point_size))
                 ax.axhline(limit,ls="--",lw=line_width,color=limit_col)
                 if not fails.empty:
-                    ax.scatter(fails[date_col] if date_col!="None" else fails.index,fails[val_col],s=point_size,color="red",label="Fails")
+                    ax.scatter(fail_x,fails[val_col],label="Fails",**common.marker_kwargs(fail_marker,fail_col,size=point_size))
                 if log_y: ax.set_yscale("log")
                 if custom_ylim and y_axis_min is not None and y_axis_max is not None:
                     ax.set_ylim(y_axis_min, y_axis_max)

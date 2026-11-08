@@ -208,6 +208,8 @@ SLR-Tools/
 | Capping | Fixed the Capping Summary table rendering as all-NaN under newer pandas (chained-assignment issue) |
 | Data Verification | Certificate and assay uploaders now accept Excel (`.xlsx`/`.xlsm`) directly as well as `.csv` — no more Save-As-CSV step. Files that fail to merge now report why instead of failing silently. |
 | Standards (CRMs) | Restored the "no grouping field" chart branch — when no grouping field is selected, the chart and per-CRM summary now render against the full filtered dataset, matching the grouped path's calculations and plotting. |
+| Blanks, Standards, Z-Score | Chart options: pick the marker shape (dot, hollow dot, star, square, triangle, diamond, cross, plus) and the colours of points, failures and lines; remove chosen dates or hide dates with fewer than N samples. Blanks can also place samples side by side ("only show dates with data") instead of on a calendar with gaps. |
+| Drill Hole Comparison | Hide empty buckets or remove chosen ones on the grade histogram, distance and cutoff-range bar charts; kept buckets close up with no gaps. Colour and marker for the data count line. |
 
 ## Planned / Outstanding Updates
 

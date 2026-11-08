@@ -658,3 +658,131 @@ def make_whitespace(number_of_lines=1):
 
 
 
+
+
+# ── Chart customisation shared by the QA/QC and comparison charts ────────────
+# Marker shapes offered to users, by display name. "Hollow" shapes draw only
+# the outline, in the chosen colour.
+MARKER_SHAPES = {
+    "Dot": "o", "Hollow dot": "o",
+    "Star": "*", "Hollow star": "*",
+    "Square": "s", "Hollow square": "s",
+    "Triangle": "^", "Hollow triangle": "^",
+    "Diamond": "D", "Hollow diamond": "D",
+    "Cross": "X", "Plus": "P",
+}
+
+
+def _prune_choice(key, options):
+    """Drop saved multiselect picks that aren't options any more (a different
+    file, a restored JSON, a new bin size): Streamlit raises on them."""
+    picked = st.session_state.get(key)
+    if isinstance(picked, list):
+        st.session_state[key] = [p for p in picked if p in options]
+
+
+def marker_select(label, key, default="Dot", container=None):
+    """A marker-shape selectbox. Returns the display name; pass it to
+    marker_kwargs() or line_marker_kwargs()."""
+    box = container or st
+    names = list(MARKER_SHAPES)
+    if st.session_state.get(key) not in names:
+        st.session_state.pop(key, None)
+    if key in st.session_state:
+        # Restored from a saved JSON: passing a default as well makes Streamlit warn.
+        return box.selectbox(label, names, key=key)
+    return box.selectbox(label, names, index=names.index(default), key=key)
+
+
+def marker_kwargs(shape, color, size=None, edge_color=None):
+    """Keyword arguments for ax.scatter() drawing `shape` in `color`."""
+    hollow = shape.startswith("Hollow")
+    kw = {
+        "marker": MARKER_SHAPES.get(shape, "o"),
+        "facecolors": "none" if hollow else color,
+        "edgecolors": color if hollow else (edge_color or color),
+    }
+    if hollow:
+        kw["linewidths"] = 1.3
+    if size is not None:
+        kw["s"] = size
+    return kw
+
+
+def line_marker_kwargs(shape, color, size=None):
+    """Keyword arguments for ax.plot() / Line2D markers (legends, lines)."""
+    hollow = shape.startswith("Hollow")
+    kw = {
+        "marker": MARKER_SHAPES.get(shape, "o"),
+        "markerfacecolor": "none" if hollow else color,
+        "markeredgecolor": color,
+    }
+    if size is not None:
+        kw["markersize"] = size
+    return kw
+
+
+def date_display_options(key, dates, calendar_axis=False, container=None):
+    """Sidebar controls for which dates a chart shows.
+
+    `dates` is the date column the charts draw from. With `calendar_axis`
+    the chart normally spaces points by calendar date, so it also offers
+    "only dates with data", which places dated samples side by side instead
+    of leaving gaps for dates with no samples. Returns a dict for
+    filter_dates()."""
+    box = container or st.sidebar
+    days = sorted(pd.to_datetime(dates, errors="coerce").dropna().dt.strftime("%Y-%m-%d").unique())
+    with box.expander("🗓️ Dates shown on charts"):
+        only_data = True
+        if calendar_axis:
+            only_data = st.checkbox(
+                "Only show dates with data (no gaps)", key=key + "_only_data",
+                help="Place samples side by side in date order, instead of spacing "
+                     "them on a calendar with gaps for dates that have no samples.")
+        min_count = st.number_input(
+            "Hide dates with fewer than this many samples", min_value=1, value=1, step=1,
+            key=key + "_min_count",
+            help="1 shows every date. Applied per chart, so a date can be sparse in "
+                 "one chart and kept in another.")
+        _prune_choice(key + "_removed", days)
+        removed = st.multiselect("Remove dates", days, key=key + "_removed",
+                                 help="Leave these dates out of every chart.")
+        st.caption("Sample counts and failure rates on the charts cover the dates shown.")
+    return {"only_data": only_data, "min_count": int(min_count), "removed": set(removed)}
+
+
+def filter_dates(df, date_col, opts):
+    """Apply date_display_options() to one chart's rows."""
+    if df.empty or not opts:
+        return df
+    day = pd.to_datetime(df[date_col], errors="coerce").dt.strftime("%Y-%m-%d")
+    keep = ~day.isin(opts["removed"])
+    if opts["min_count"] > 1:
+        keep &= day.map(day.value_counts()).fillna(0) >= opts["min_count"]
+    return df[keep]
+
+
+def bucket_display_options(key, buckets, noun="buckets", container=None):
+    """Controls for hiding buckets (bars, bins, cutoff ranges) on a chart.
+    Returns a dict for keep_buckets()."""
+    box = container or st
+    buckets = [str(b) for b in buckets]
+    with box.expander(f"🪣 {noun.capitalize()} shown"):
+        hide_empty = st.checkbox(f"Hide empty {noun}", key=key + "_hide_empty",
+                                 help=f"Leave out {noun} with no data in either dataset.")
+        _prune_choice(key + "_removed", buckets)
+        removed = st.multiselect(f"Remove {noun}", buckets, key=key + "_removed")
+    return {"hide_empty": hide_empty, "removed": set(removed)}
+
+
+def keep_buckets(buckets, totals, opts):
+    """The buckets to draw, in order. `totals` gives each bucket's amount of
+    data (summed over datasets), used for "hide empty"."""
+    kept = []
+    for b, total in zip(buckets, totals):
+        if str(b) in opts["removed"]:
+            continue
+        if opts["hide_empty"] and not (pd.notna(total) and total > 0):
+            continue
+        kept.append(b)
+    return kept

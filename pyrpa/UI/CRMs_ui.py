@@ -816,6 +816,13 @@ if file is not None:
     twoSD_color   = col3.color_picker('2 SD Color', '#B5ED38', key='twoSD_color')
     threeSD_color = col4.color_picker('3 SD Color', '#7FA37F', key='threeSD_color')
     show_summary  = col5.checkbox('Show Summary', key='show_summary')
+    with st.sidebar.expander("🎨 Markers and line colours"):
+        sample_marker  = common.marker_select('Sample marker', key='crms_sample_marker')
+        failure_marker = common.marker_select('Failure marker', key='crms_failure_marker')
+        expected_color = st.color_picker('Expected value line', '#000000', key='crms_expected_color')
+        mean_color     = st.color_picker('Mean line', '#92B2F5', key='crms_mean_color')
+        movmean_color  = st.color_picker('Moving mean line', '#A6A6A6', key='crms_movmean_color')
+    crm_date_opts = common.date_display_options('crms', data[date_col])
 
     sdcalc  = st.sidebar.checkbox('Expected Value + 1SD', key='sdcalc',
                                   help='Use this Failure Criteria based on the CRM certificate Expected Value and 1SD')
@@ -997,6 +1004,10 @@ if file is not None:
                         data_subset = data_subset[data_subset[date_col].dt.date == x_axis_min]
                     else:
                         st.write('There is a problem with dates')
+                    data_subset = common.filter_dates(data_subset, date_col, crm_date_opts).reset_index(drop=True)
+                    if data_subset.empty:
+                        st.warning(f"No data in the dates shown for {certificate} {group_label} – skipping.")
+                        continue
 
                     data_subset['Sequence'] = range(0, len(data_subset))
                     st.dataframe(data_subset)
@@ -1098,27 +1109,21 @@ if file is not None:
                     ax.scatter(data_subset['Sequence'],
                                data_subset[grade_col],
                                label=f'{elem}',
-                               color=Point_color,
-                               edgecolors=Point_color,
-                               s=30,
-                               marker='o')
+                               **common.marker_kwargs(sample_marker, Point_color, size=30))
                     mask_exceed_limits = ((data_subset[grade_col] > data_subset['Upper Bound (3SD)']) |
                                           (data_subset[grade_col] < data_subset['Lower Bound (3SD)']))
                     ax.plot(data_subset['Sequence'],
                             data_subset[expected_val_col],
                             label='Expected Value',
-                            color='black',
+                            color=expected_color,
                             linestyle='--',
                             linewidth=1.5)
                     ax.scatter(data_subset['Sequence'][mask_exceed_limits],
                                data_subset[grade_col][mask_exceed_limits],
-                               color=failure_color,
-                               edgecolors='#A36F67',
-                               s=30,
-                               marker='o',
+                               **common.marker_kwargs(failure_marker, failure_color, size=30, edge_color='#A36F67'),
                                label='Failures')
                     ax.axhline(y=mean_value_au,
-                               color='#92B2F5',
+                               color=mean_color,
                                linestyle='-',
                                label='Mean',
                                linewidth=1.75)
@@ -1165,7 +1170,7 @@ if file is not None:
                     ax.plot(data_subset['Sequence'],
                             data_subset['Moving Mean'],
                             label='Moving Mean (7)',
-                            color='#A6A6A6',
+                            color=movmean_color,
                             linestyle='--',
                             linewidth=0.75)
 
@@ -1293,6 +1298,10 @@ if file is not None:
                     data_subset = data_subset[data_subset[date_col].dt.date == x_axis_min]
                 else:
                     st.write('There is a problem with dates')
+                data_subset = common.filter_dates(data_subset, date_col, crm_date_opts).reset_index(drop=True)
+                if data_subset.empty:
+                    st.warning(f"No data in the dates shown for {certificate} – skipping.")
+                    continue
 
                 data_subset['Sequence'] = range(0, len(data_subset))
                 st.dataframe(data_subset)
@@ -1380,27 +1389,21 @@ if file is not None:
                 ax.scatter(data_subset['Sequence'],
                            data_subset[grade_col],
                            label=f'{elem}',
-                           color=Point_color,
-                           edgecolors=Point_color,
-                           s=30,
-                           marker='o')
+                           **common.marker_kwargs(sample_marker, Point_color, size=30))
                 mask_exceed_limits = ((data_subset[grade_col] > data_subset['Upper Bound (3SD)']) |
                                       (data_subset[grade_col] < data_subset['Lower Bound (3SD)']))
                 ax.plot(data_subset['Sequence'],
                         data_subset[expected_val_col],
                         label='Expected Value',
-                        color='black',
+                        color=expected_color,
                         linestyle='--',
                         linewidth=1.5)
                 ax.scatter(data_subset['Sequence'][mask_exceed_limits],
                            data_subset[grade_col][mask_exceed_limits],
-                           color=failure_color,
-                           edgecolors='#A36F67',
-                           s=30,
-                           marker='o',
+                           **common.marker_kwargs(failure_marker, failure_color, size=30, edge_color='#A36F67'),
                            label='Failures')
                 ax.axhline(y=mean_value_au,
-                           color='#92B2F5',
+                           color=mean_color,
                            linestyle='-',
                            label='Mean',
                            linewidth=1.75)
@@ -1447,7 +1450,7 @@ if file is not None:
                 ax.plot(data_subset['Sequence'],
                         data_subset['Moving Mean'],
                         label='Moving Mean (7)',
-                        color='#A6A6A6',
+                        color=movmean_color,
                         linestyle='--',
                         linewidth=0.75)
 

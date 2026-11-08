@@ -313,7 +313,7 @@ How to use
 # ───────── imports ─────────
 import os, io, json, tempfile, re, random, datetime as dt
 import numpy as np, pandas as pd
-import matplotlib.pyplot as plt, seaborn as sns
+import matplotlib.pyplot as plt, matplotlib.colors as mcolors, seaborn as sns
 from matplotlib.lines import Line2D
 from matplotlib.ticker import FuncFormatter
 import streamlit as st
@@ -447,6 +447,24 @@ with st.sidebar.expander("📐 Style"):
         st.warning("⚠️ Min Z must be **less** than Max Z")
     fig_size = common.aspect_ratio_input((15, 6), key="zscore_aspect")
 
+with st.sidebar.expander("🎨 Markers and colours"):
+    point_marker = common.marker_select("Point marker", key="zscore_point_marker")
+    custom_crm_colours = st.checkbox("Choose a colour for each CRM", key="zscore_custom_colours",
+                                     help="Otherwise CRMs are coloured from a palette; change "
+                                          "the palette seed in Style to shuffle it.")
+    crm_colour_pick = {}
+    if custom_crm_colours:
+        _pal = shuffled_palette("tab10", 10, palette_seed)
+        for _k, _crm in enumerate(sorted(df[crm_col].dropna().astype(str).unique())):
+            crm_colour_pick[_crm] = st.color_picker(_crm, mcolors.to_hex(_pal[_k % len(_pal)]),
+                                                    key=f"zscore_crm_colour_{_crm}")
+    st.markdown("**Control lines**")
+    sd3_colour  = st.color_picker("±3 SD", "#7FA37F", key="zscore_sd3_colour")
+    sd2_colour  = st.color_picker("±2 SD", "#B5ED38", key="zscore_sd2_colour")
+    zero_colour = st.color_picker("0 line", "#000000", key="zscore_zero_colour")
+
+z_date_opts = common.date_display_options("zscore", df[date_col])
+
 # ───────── run trigger ─────────
 if st.sidebar.button("🚀 Run"): st.session_state.run_plots = True
 if not st.session_state.get("run_plots"):
@@ -461,11 +479,11 @@ df = df.sort_values(date_col).reset_index(drop=True)
 df["SortIndex"] = df.index
 
 # ───────── constants ─────────
-ctrl_lines = [(3, "+3 SD", "#7FA37F"),
-              (-3, "‑3 SD", "#7FA37F"),
-              (2, "+2 SD", "#B5ED38"),
-              (-2, "‑2 SD", "#B5ED38"),
-              (0, "0", "#000000")]
+ctrl_lines = [(3, "+3 SD", sd3_colour),
+              (-3, "‑3 SD", sd3_colour),
+              (2, "+2 SD", sd2_colour),
+              (-2, "‑2 SD", sd2_colour),
+              (0, "0", zero_colour)]
 
 ppt, summary_rows = Presentation(), []
 size_pts2 = point_size ** 2
@@ -480,6 +498,11 @@ for el in elems_sel:
     if date_rng:
         start, end = map(pd.to_datetime, date_rng); end += pd.Timedelta(days=1)
         sub = sub[(sub[date_col] >= start) & (sub[date_col] < end)]
+    n_before = len(sub)
+    sub = common.filter_dates(sub, date_col, z_date_opts)
+    if len(sub) < n_before:
+        # Close the gaps the removed dates leave.
+        sub = sub.assign(SortIndex=range(len(sub)))
     if sub.empty: continue
 
     # palette to cover all CRMs
@@ -487,6 +510,8 @@ for el in elems_sel:
     base_pal = shuffled_palette("tab10", 10, palette_seed)
     colors = (base_pal * ((len(crms) // len(base_pal)) + 1))[:len(crms)]
     crm_palette = dict(zip(crms, colors))
+    if custom_crm_colours:
+        crm_palette.update({c: crm_colour_pick[str(c)] for c in crms if str(c) in crm_colour_pick})
 
     fig, ax = plt.subplots(figsize=fig_size)
 
@@ -495,12 +520,10 @@ for el in elems_sel:
         ax.axhline(y=y, color=col, lw=line_width, ls="-" if y else "--")
 
     # scatter
-    sns.scatterplot(
-        data=sub,
-        x="SortIndex", y="z_score",
-        hue=crm_col, palette=crm_palette,
-        s=size_pts2, edgecolor=None, ax=ax, legend=False,
-    )
+    for c in crms:
+        pts = sub[sub[crm_col] == c]
+        ax.scatter(pts["SortIndex"], pts["z_score"],
+                   **common.marker_kwargs(point_marker, crm_palette[c], size=size_pts2))
 
     # x‑ticks
     tick_spacing = max(1, len(sub) // 20)
@@ -525,8 +548,8 @@ for el in elems_sel:
     ax.set_title(f"Z‑Score by CRM & Company – {el}")
 
     # legend (all CRMs + control lines)
-    crm_handles = [Line2D([], [], marker="o", color="none",
-                          markerfacecolor=crm_palette[c], markersize=6, label=c)
+    crm_handles = [Line2D([], [], color="none", label=c,
+                          **common.line_marker_kwargs(point_marker, crm_palette[c], size=6))
                    for c in crms]
     line_handles = [Line2D([0, 1], [0, 0], color=col, lw=1.5,
                            ls="-" if y else "--", label=lbl)
