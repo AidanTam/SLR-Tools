@@ -24,11 +24,16 @@ from .models import (
     STATUS_NON_COMPLIANT,
     STATUS_NOT_ADDRESSED,
     STATUS_NOT_APPLICABLE,
-    STATUS_PARTIAL,
+    STATUS_NEEDS_REVIEW,
     Criterion,
     Finding,
     Page,
 )
+from .arithmetic_checks import check_table_arithmetic
+from .assumption_consistency import check_assumption_consistency
+from .certificate_checks import check_certificate_content
+from .crossref_checks import check_cross_references
+from .date_checks import check_dates
 from .numeric_consistency import check_summary_numbers
 from .structure import not_applicable_items
 
@@ -115,7 +120,7 @@ def check_table_of_contents(pages: List[Page], page_items: Dict[int, Tuple[str, 
         )
     return _finding(
         "PY-TOC", "Table of Contents present", "front_matter",
-        "Contents of the Technical Report", STATUS_PARTIAL,
+        "Contents of the Technical Report", STATUS_NEEDS_REVIEW,
         f"Heading found on page {heading_page} but entries could not be confirmed "
         "automatically (no dot-leader lines detected) — verify manually.",
         pages=[heading_page],
@@ -303,7 +308,7 @@ def check_references_list(pages: List[Page]) -> Finding:
         entry_count = len([l for l in ref_text.splitlines() if re.search(r"(19|20)\d{2}", l)])
         return _finding(
             "PY-REFS", "Item 27: References list present", "item_27", "References",
-            STATUS_COMPLIANT if entry_count else STATUS_PARTIAL,
+            STATUS_COMPLIANT if entry_count else STATUS_NEEDS_REVIEW,
             f"Reference list found at page {ref_page} (~{entry_count} dated entries). "
             "No parenthetical (Author, Year) in-text citations were detected in the "
             "body to cross-check against it.",
@@ -592,7 +597,11 @@ def _parse_date(raw: str) -> Optional[date]:
 
 _SUPERSEDED_CONTEXT_RE = re.compile(
     r"supersed|previous\s+(?:technical\s+report|report)|prior\s+(?:technical\s+report|report)"
-    r"|prior\s+involvement|co-?authored?|previously\s+filed|earlier\s+report",
+    r"|prior\s+involvement|co-?authored?|previously\s+filed|earlier\s+report"
+    # A QP describing an earlier report in their experience: "This report,
+    # dated April 23, 2014, with an effective date of March 3, 2014, was
+    # completed under the supervision of ...".
+    r"|report,?\s+dated\b|completed\s+under|under\s+the\s+supervision|where\s+I\s+was\s+(?:also\s+)?employed",
     re.IGNORECASE,
 )
 _SUPERSEDED_LOOKBACK = 220  # chars before the match to check for another report's context
@@ -734,7 +743,31 @@ _NUM_RE = re.compile(r"\b(\d{1,2})\b")
 _DECIMAL_SUBITEM_RE = re.compile(r"\b(\d{1,2})(?:\.\d+)+\b")
 
 
+# "overall preparation and all sections exclusive of 13 and 14.6, and related
+# subsections in 1, 25 and 26": the QP claims everything EXCEPT the listed
+# whole sections (a sub-section like 14.6 only carves a piece out of Item 14).
+_ALL_EXCEPT_RE = re.compile(
+    r"\ball\s+(?:other\s+)?(?:sections|items)\b.{0,40}?(?:exclusive\s+of|except(?:\s+for)?|excluding|other\s+than)",
+    re.IGNORECASE | re.DOTALL,
+)
+_RELATED_RE = re.compile(r"\brelated\b|;|\bwhich\b", re.IGNORECASE)
+
+
 def _extract_item_numbers(span: str) -> set:
+    m = _ALL_EXCEPT_RE.search(span)
+    if m:
+        tail = span[m.end():]
+        cut = _RELATED_RE.search(tail)
+        if cut:
+            tail = tail[: cut.start()]
+        excluded = {
+            int(x) for x in re.findall(r"(?<![\d.])(\d{1,2})(?![\d]|\.\d)", tail) if 1 <= int(x) <= _NUM_ITEMS
+        }
+        return set(range(1, _NUM_ITEMS + 1)) - excluded
+    return _extract_plain_item_numbers(span)
+
+
+def _extract_plain_item_numbers(span: str) -> set:
     """Pull Item/Section numbers out of a text span: ranges ('4 to 11'),
     singles, and decimal sub-items ('26.2' means Item 26 — collapsed first so
     it isn't also read as standalone Item 2), clipped to 1-27."""
@@ -997,6 +1030,25 @@ def run_structural_checks(
                     f"PY-ERR-{i}", f"Structural check #{i} failed to run", "",
                     "General / Unmapped", STATUS_NOT_ADDRESSED,
                     "", evidence=str(exc),
+                )
+            )
+    # Checks that return several findings (or none) rather than exactly one.
+    multi = [
+        ("assumption consistency", lambda: check_assumption_consistency(pages, page_items=page_items)),
+        ("cross-reference", lambda: check_cross_references(pages)),
+        ("date order", lambda: check_dates(pages)),
+        ("table arithmetic", lambda: check_table_arithmetic(pages, report_path)),
+        ("certificate content", lambda: [check_certificate_content(pages)]),
+    ]
+    for label, run in multi:
+        try:
+            findings.extend(run())
+        except Exception as exc:  # pragma: no cover - defensive
+            findings.append(
+                _finding(
+                    "PY-ERR-" + label.upper().replace(" ", "-"),
+                    f"{label.capitalize()} checks failed to run", "",
+                    "General / Unmapped", STATUS_NOT_ADDRESSED, "", evidence=str(exc),
                 )
             )
     return findings

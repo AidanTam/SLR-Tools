@@ -85,6 +85,49 @@ check)` in the report, distinct from the model-judged ones:
   treat a flag as "check this". A figure counts as matched if the value appears anywhere in
   the body, so a common value ("5 years") is weak evidence and a changed one can slip through
 
+- Assumption consistency (`compliance/assumption_consistency.py`): metal prices (gold,
+  silver, copper, nickel, ... per `/oz` or `/lb`), exchange rate, discount rate and mine
+  life are each collected wherever they are stated and compared. A finding is produced for
+  every assumption stated at least twice. Statements are grouped by use (resource / reserve /
+  economic): two values for the *same* use is Needs Review (Non-Compliant for the economic
+  analysis or reserves); different values for *different* uses (a higher resource-shell
+  price) pass with a note. Sensitivity cases, spot/historical/consensus prices, price lists
+  and per-ounce costs (AISC, cash cost, royalties) are skipped, and `0.75 US$/C$` is
+  treated as the same rate as `1.33 C$/US$`
+
+- Cross-references (`compliance/crossref_checks.py`): every "Figure x-y" / "Table x-y" in the
+  text has a caption; figure and table numbers are unique and run in sequence within a
+  chapter; every "Section 13.2" in the text is a heading that exists. References to other
+  documents ("Table 5 of Smith (2019)", "Section 1.5 of NI 43-101") are skipped. A caption
+  that is only in an image can't be seen, so a flag may mean that
+- Table arithmetic (`compliance/arithmetic_checks.py`, PDF only): Total / Subtotal rows equal
+  the sum of their rows, Measured + Indicated (and Proven + Probable) equal the sum of their
+  categories with a tonnage-weighted combined grade, and contained metal equals tonnage x
+  grade (g/t to ounces, % to tonnes or pounds), all allowing for the rounding the table
+  shows. A Total is only reported when it is a near miss (within 15%): a Total far from its
+  rows usually means a table that continues across a page lost rows, not a typo, so Total
+  findings are never stronger than Needs Review
+- Date logic (`compliance/date_checks.py`): the report date (from the running header) is not
+  before the effective date; no QP signs before it; no site visit is after it; no reference
+  is dated after the effective year (access dates are ignored)
+- QP certificate content (`compliance/certificate_checks.py`): each certificate states the
+  effective date, that the QP is qualified, the site visit (or that none was made), the
+  sections they are responsible for, independence, prior involvement, that they have read
+  NI 43-101 and the report complies, that it is not misleading, their education,
+  registration and experience, and a signature date. A missing statement is reported against
+  the QP's name. Checks that a statement is made, not that it is true
+
+### Statuses
+
+Model-judged criteria are **Compliant / Partial / Non-Compliant / Not Addressed**
+("Partial" really can be half-met: a criterion with several parts, two of which the
+report covers). The automated checks never say Partial. When one finds something
+suspicious but can't tell whether it is a real error (a Total on a table the parser may
+have misread, a price that may be used for a different purpose, a reference that may be a
+website), it reports **Needs Review**: a flag that a person must decide, not a degree of
+compliance. Needs Review has its own count in the summary and a lime-green status cell in
+the Word report. **Not Applicable** means the requirement doesn't apply to this report.
+
 These run first, unconditionally, before the LLM pass — so every criterion
 they cover never costs a model call. Run `python -m unittest tests.test_structural_checks -v`
 to see them exercised against synthetic report text with no PDF, no
@@ -105,6 +148,11 @@ compliance/
   structure.py           NI 43-101 Item detection + criterion->Item mapping
   structural_checks.py   deterministic, no-LLM checks (see above)
   numeric_consistency.py Summary-vs-body figure check (no LLM)
+  assumption_consistency.py  same assumption, same value everywhere (no LLM)
+  crossref_checks.py     figure / table / section references resolve (no LLM)
+  arithmetic_checks.py   table totals, M+I sums, tonnage x grade (no LLM, PDF only)
+  date_checks.py         effective / report / signature / site-visit date order (no LLM)
+  certificate_checks.py  required statements in every QP certificate (no LLM)
   checklist.py           checklist -> atomic criteria (LLM-assisted)
   index.py               chunk + embed + retrieve (with disk cache)
   checker.py             per-criterion verdict engine (LLM)

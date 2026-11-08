@@ -51,6 +51,7 @@ importlib.reload(ni_report)
 
 from compliance.models import (
     STATUS_COMPLIANT,
+    STATUS_NEEDS_REVIEW,
     STATUS_NON_COMPLIANT,
     STATUS_NOT_ADDRESSED,
     STATUS_NOT_APPLICABLE,
@@ -62,15 +63,17 @@ _STATUS_ICON = {
     STATUS_COMPLIANT: "✅",
     STATUS_NOT_APPLICABLE: "☑️",
     STATUS_PARTIAL: "⚠️",
+    STATUS_NEEDS_REVIEW: "🔍",
     STATUS_NON_COMPLIANT: "❌",
     STATUS_NOT_ADDRESSED: "ℹ️",
 }
 _STATUS_ORDER = {
     STATUS_NON_COMPLIANT: 0,
-    STATUS_PARTIAL: 1,
-    STATUS_NOT_ADDRESSED: 2,
-    STATUS_NOT_APPLICABLE: 3,
-    STATUS_COMPLIANT: 4,
+    STATUS_NEEDS_REVIEW: 1,
+    STATUS_PARTIAL: 2,
+    STATUS_NOT_ADDRESSED: 3,
+    STATUS_NOT_APPLICABLE: 4,
+    STATUS_COMPLIANT: 5,
 }
 
 
@@ -202,7 +205,7 @@ st.divider()
 for f in sorted(findings, key=lambda f: _STATUS_ORDER.get(f.status, 9)):
     icon = _STATUS_ICON.get(f.status, "•")
     label = f"{icon} {f.criterion.item_title} — {f.criterion.text}"
-    expanded = f.status in (STATUS_NON_COMPLIANT, STATUS_PARTIAL)
+    expanded = f.status in (STATUS_NON_COMPLIANT, STATUS_NEEDS_REVIEW, STATUS_PARTIAL)
     with st.expander(label, expanded=expanded):
         st.write(f"**Status:** {f.status}")
         if f.rationale:

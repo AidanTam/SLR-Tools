@@ -11,7 +11,7 @@ from compliance.models import (
     STATUS_COMPLIANT,
     STATUS_NON_COMPLIANT,
     STATUS_NOT_ADDRESSED,
-    STATUS_PARTIAL,
+    STATUS_NEEDS_REVIEW,
     Page,
 )
 from compliance.numeric_consistency import check_summary_numbers
@@ -68,7 +68,7 @@ class TestSummaryNumbers(unittest.TestCase):
             "The plan moves 77 Mt. The plant runs at 27,000 t/d for a 14 year life.",
             "Head grade 3.10 g/t Au. Capital cost of US$1.2 billion. Plant rate 9.86 Mt/a.",
         )
-        self.assertIn(f.status, (STATUS_PARTIAL, STATUS_NON_COMPLIANT))
+        self.assertIn(f.status, (STATUS_NEEDS_REVIEW, STATUS_NON_COMPLIANT))
         self.assertIn("1.08 g/t", f.evidence)
 
     def test_grade_is_not_matched_by_a_different_unit(self):
@@ -112,7 +112,7 @@ class TestSummaryNumbers(unittest.TestCase):
             "Table 14-1\nMeasured\nTonnes (Mt)\n1.234\n2.45\n5.876\n",
         )
         f = run(summary, *body)
-        self.assertIn(f.status, (STATUS_PARTIAL, STATUS_NON_COMPLIANT))
+        self.assertIn(f.status, (STATUS_NEEDS_REVIEW, STATUS_NON_COMPLIANT))
         self.assertIn("5,678", f.evidence)
 
     def test_years_and_page_labels_in_tables_are_ignored(self):
