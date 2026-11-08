@@ -207,10 +207,10 @@ SLR-Tools/
 | Capping | `Metal Loss` in the Capping Summary table now matches the `Percent Metal Loss` in the Decile Analysis table (computed from unrounded weighted averages) |
 | Capping | Fixed the Capping Summary table rendering as all-NaN under newer pandas (chained-assignment issue) |
 | Data Verification | Certificate and assay uploaders now accept Excel (`.xlsx`/`.xlsm`) directly as well as `.csv` — no more Save-As-CSV step. Files that fail to merge now report why instead of failing silently. |
+| Standards (CRMs) | Restored the "no grouping field" chart branch — when no grouping field is selected, the chart and per-CRM summary now render against the full filtered dataset, matching the grouped path's calculations and plotting. |
 
 ## Planned / Outstanding Updates
 
 | Module | Update | Notes |
 |--------|--------|-------|
-| Standards (CRMs) | Restore the "no grouping field" chart branch | When no grouping field is selected, no chart/summary currently renders ([CRMs_ui.py](pyrpa/UI/CRMs_ui.py) ~line 1193 is a stub). Partly masked now that `Lab` auto-detects and triggers the working grouped path. |
 | Dependencies | Reconcile `requirements.txt` with the installed environment | Pinned versions (pandas 1.4.2, etc.) differ from the environment in use (pandas 3.x); watch for chained-assignment patterns elsewhere. |

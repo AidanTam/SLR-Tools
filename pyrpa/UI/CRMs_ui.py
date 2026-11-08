@@ -1218,13 +1218,11 @@ if file is not None:
                     st.pyplot(fig)
             else:
                 # ------------------------------------------------------------------
-                #         >>> THE "NO GROUP FIELD" BRANCH STAYS IDENTICAL <<<
+                #                  NO GROUPING FIELD SELECTED
                 # ------------------------------------------------------------------
                 data_subset = filtered_data.copy()
                 group_label = ""
                 group_key   = f"{unique_key_prefix}_all"
-
-                # (Everything below is the same as your original script…)
 
                 x_axis_min = st.date_input("X axis min",
                                            key=f"x_min_{group_key}",
@@ -1240,10 +1238,264 @@ if file is not None:
                                              value=data_subset[grade_col].max() + data_subset[grade_col].std())
                 labname = st.text_input('Lab Name', key=f"lab_{group_key}")
 
-                # --- (keep all your original calculations / plotting code here) ---
+                if not UseUL_LW:
+                    if not usemean:
+                        expected_val = data_subset[expected_val_col].mean()
+                        mean_value_au = data_subset[grade_col].mean()
+                        if not sdcalc:
+                            standard_deviation = data_subset[grade_col].std()
+                            data_subset['Upper Bound (2SD)'] = expected_val + (twostd * standard_deviation)
+                            data_subset['Lower Bound (2SD)'] = expected_val - (twostd * standard_deviation)
+                            data_subset['Upper Bound (3SD)'] = expected_val + (threestd * standard_deviation)
+                            data_subset['Lower Bound (3SD)'] = expected_val - (threestd * standard_deviation)
+                        else:
+                            if len(data_subset[std_col].unique()) == 1:
+                                standard_deviation = data_subset[std_col].unique()[0]
+                                data_subset['Upper Bound (2SD)'] = expected_val + (twostd * standard_deviation)
+                                data_subset['Lower Bound (2SD)'] = expected_val - (twostd * standard_deviation)
+                                data_subset['Upper Bound (3SD)'] = expected_val + (threestd * standard_deviation)
+                                data_subset['Lower Bound (3SD)'] = expected_val - (threestd * standard_deviation)
+                            else:
+                                st.warning('There are multiple values in the STD column; please check the file for any errors')
+                    else:
+                        expected_val = data_subset[expected_val_col].mean()
+                        mean_value_au = data_subset[grade_col].mean()
+                        if not sdcalc:
+                            standard_deviation = data_subset[grade_col].std()
+                            data_subset['Upper Bound (2SD)'] = mean_value_au + (twostd * standard_deviation)
+                            data_subset['Lower Bound (2SD)'] = mean_value_au - (twostd * standard_deviation)
+                            data_subset['Upper Bound (3SD)'] = mean_value_au + (threestd * standard_deviation)
+                            data_subset['Lower Bound (3SD)'] = mean_value_au - (threestd * standard_deviation)
+                        else:
+                            if len(data_subset[std_col].unique()) == 1:
+                                standard_deviation = data_subset[std_col].unique()[0]
+                                data_subset['Upper Bound (2SD)'] = mean_value_au + (twostd * standard_deviation)
+                                data_subset['Lower Bound (2SD)'] = mean_value_au - (twostd * standard_deviation)
+                                data_subset['Upper Bound (3SD)'] = mean_value_au + (threestd * standard_deviation)
+                                data_subset['Lower Bound (3SD)'] = mean_value_au - (threestd * standard_deviation)
+                            else:
+                                st.warning('There are multiple values in the STD column; please check the file for any errors')
+                else:
+                    expected_val = data_subset[expected_val_col].mean()
+                    mean_value_au = data_subset[grade_col].mean()
+                    standard_deviation = data_subset[grade_col].std()
+                    data_subset['Upper Bound (3SD)'] = data_subset[upperlimit_col].mean()
+                    data_subset['Lower Bound (3SD)'] = data_subset[lowerlimit_col].mean()
 
-                # … THIS PART WAS NOT MODIFIED. Copy it straight from your file …
-                # (I trimmed it in this message just so it isn’t 1 000+ extra lines)
+                data_subset = data_subset.sort_values(by=[date_col]).reset_index(drop=True)
+
+                x_axis_min_dt = pd.to_datetime(x_axis_min)
+                x_axis_max_dt = pd.to_datetime(x_axis_max) + pd.Timedelta(days=1)
+                if x_axis_max_dt > x_axis_min_dt:
+                    data_subset = data_subset[(data_subset[date_col] >= x_axis_min_dt) &
+                                              (data_subset[date_col] <= x_axis_max_dt)]
+                elif x_axis_max_dt == x_axis_min_dt:
+                    data_subset = data_subset[data_subset[date_col].dt.date == x_axis_min]
+                else:
+                    st.write('There is a problem with dates')
+
+                data_subset['Sequence'] = range(0, len(data_subset))
+                st.dataframe(data_subset)
+
+                nbin = st.slider('Number of Ticks', 1, max(1, len(data_subset)-1), 3,
+                                 key=f"nbin_{group_key}")
+                data_subset['Sequence'] = data_subset['Sequence'].astype('category')
+
+                num_samples  = len(data_subset[grade_col])
+                num_outliers = sum((data_subset[grade_col] > data_subset['Upper Bound (3SD)']) |
+                                   (data_subset[grade_col] < data_subset['Lower Bound (3SD)']))
+                bias = ((mean_value_au / data_subset[expected_val_col].iloc[0]) - 1) * 100
+                percentage_outliers = (num_outliers / num_samples) * 100
+
+                summary_data = {
+                    "Number of Samples": num_samples,
+                    "Mean": mean_value_au,
+                    "Expected Value": data_subset[expected_val_col].mean(),
+                    "Standard Deviation": standard_deviation,
+                    "Number of Outliers": num_outliers,
+                    "Bias (%)": bias,
+                    "Failure Rate (%)": percentage_outliers
+                }
+                summary_data_rounded = {k: round(v, 2) for k, v in summary_data.items()}
+
+                if not UseUL_LW:
+                    summary_data2 = {
+                        'Element': elem,
+                        'Unit': None,  # will be set below
+                        'CRM': certificate,
+                        'Periode Range': f"{x_axis_min} - {x_axis_max}",
+                        "Number of Samples": num_samples,
+                        "Mean": mean_value_au,
+                        "Expected Value": data_subset[expected_val_col].mean(),
+                        "Standard Deviation": standard_deviation,
+                        "Number of Outliers": num_outliers,
+                        "Bias (%)": bias,
+                        "Failure Rate (%)": percentage_outliers,
+                    }
+                else:
+                    summary_data2 = {
+                        'Element': elem,
+                        'Unit': None,  # will be set below
+                        'CRM': certificate,
+                        'Periode Range': f"{x_axis_min} - {x_axis_max}",
+                        "Number of Samples": num_samples,
+                        "Mean": mean_value_au,
+                        "Expected Value": data_subset[expected_val_col].mean(),
+                        "Standard Deviation": standard_deviation,
+                        "Number of Outliers": num_outliers,
+                        "Bias (%)": bias,
+                        "Failure Rate (%)": percentage_outliers,
+                        'Source': data_subset[source_col].iloc[0]
+                    }
+
+                # --- Determine chart unit ---
+                if 'unit_col_name' in locals() and unit_col_name is not None:
+                    unique_units = data_subset[unit_col_name].unique()
+                    chart_unit   = unique_units[0] if len(unique_units) else ""
+                else:
+                    chart_unit   = custom_unit if (unit_selection == "Custom") else unit
+                summary_data2['Unit'] = chart_unit
+
+                summary_data_rounded2 = {k: (round(v, 2) if isinstance(v, (int, float)) else v)
+                                         for k, v in summary_data2.items()}
+
+                summary_data_rounded2['Bias (%)']        = round(summary_data_rounded2['Bias (%)'], 1)
+                summary_data_rounded2['Failure Rate (%)'] = round(summary_data_rounded2['Failure Rate (%)'], 1)
+
+                allstats.append(pd.DataFrame([summary_data_rounded2]))
+                st.dataframe(pd.DataFrame([summary_data_rounded2]))
+
+                # ------------------------------------------------------------------
+                #                              PLOTTING
+                # ------------------------------------------------------------------
+                if data_subset.empty:
+                    st.warning(f"No data for {certificate} – skipping.")
+                    continue
+
+                if not (np.isfinite(y_axis_min) and np.isfinite(y_axis_max)):
+                    y_axis_min = data_subset[grade_col].min()
+                    y_axis_max = data_subset[grade_col].max()
+
+                fig, ax = plt.subplots(figsize=fig_size, dpi=150)
+                ax.scatter(data_subset['Sequence'],
+                           data_subset[grade_col],
+                           label=f'{elem}',
+                           color=Point_color,
+                           edgecolors=Point_color,
+                           s=30,
+                           marker='o')
+                mask_exceed_limits = ((data_subset[grade_col] > data_subset['Upper Bound (3SD)']) |
+                                      (data_subset[grade_col] < data_subset['Lower Bound (3SD)']))
+                ax.plot(data_subset['Sequence'],
+                        data_subset[expected_val_col],
+                        label='Expected Value',
+                        color='black',
+                        linestyle='--',
+                        linewidth=1.5)
+                ax.scatter(data_subset['Sequence'][mask_exceed_limits],
+                           data_subset[grade_col][mask_exceed_limits],
+                           color=failure_color,
+                           edgecolors='#A36F67',
+                           s=30,
+                           marker='o',
+                           label='Failures')
+                ax.axhline(y=mean_value_au,
+                           color='#92B2F5',
+                           linestyle='-',
+                           label='Mean',
+                           linewidth=1.75)
+                if not UseUL_LW:
+                    ax.plot(data_subset['Sequence'],
+                            data_subset['Upper Bound (2SD)'],
+                            label='+2 SD',
+                            color=twoSD_color,
+                            linestyle='-',
+                            linewidth=1.75)
+                    ax.plot(data_subset['Sequence'],
+                            data_subset['Lower Bound (2SD)'],
+                            label='-2 SD',
+                            color=twoSD_color,
+                            linestyle='-',
+                            linewidth=1.75)
+                    ax.plot(data_subset['Sequence'],
+                            data_subset['Upper Bound (3SD)'],
+                            label='+3 SD',
+                            color=threeSD_color,
+                            linestyle='-',
+                            linewidth=1.75)
+                    ax.plot(data_subset['Sequence'],
+                            data_subset['Lower Bound (3SD)'],
+                            label='-3 SD',
+                            color=threeSD_color,
+                            linestyle='-',
+                            linewidth=1.75)
+                else:
+                    ax.plot(data_subset['Sequence'],
+                            data_subset['Upper Bound (3SD)'],
+                            label='Upper Limit',
+                            color=threeSD_color,
+                            linestyle='-',
+                            linewidth=1.75)
+                    ax.plot(data_subset['Sequence'],
+                            data_subset['Lower Bound (3SD)'],
+                            label='Lower Limit',
+                            color=threeSD_color,
+                            linestyle='-',
+                            linewidth=1.75)
+
+                data_subset['Moving Mean'] = data_subset[grade_col].rolling(window=7).mean()
+                ax.plot(data_subset['Sequence'],
+                        data_subset['Moving Mean'],
+                        label='Moving Mean (7)',
+                        color='#A6A6A6',
+                        linestyle='--',
+                        linewidth=0.75)
+
+                ax.set_xlabel('Date')
+                ax.set_ylabel(f'{elem} {chart_unit}', fontsize=15)
+                title_text = f'{certificate} - {elem} {chart_unit}'
+                if labname:
+                    title_text += f' - {labname}'
+                ax.set_title(title_text, fontsize=20)
+                ax.grid(False)
+                ax.legend(loc='upper right',
+                          bbox_to_anchor=(1, 1),
+                          fancybox=True,
+                          shadow=True)
+                ax.set_ylim(bottom=y_axis_min, top=y_axis_max)
+                ax.set_xticks(range(len(data_subset['Sequence'].cat.categories)))
+                ax.set_xticklabels(data_subset[date_col].dt.strftime('%Y-%m-%d'),
+                                   rotation=x_text_rotation)
+                ax.margins(x=x_margin)
+                plt.xticks(rotation=x_text_rotation, ha='right')
+                tick_interval = max(1, len(data_subset) // nbin)
+                ax.xaxis.set_major_locator(MultipleLocator(tick_interval))
+
+                if show_summary:
+                    summary_x_position = 0.99
+                    summary_y_position = 0.02
+                    summary_text = "\n".join([f"{k}: {v}" for k, v in summary_data_rounded.items()])
+                    ax.text(summary_x_position,
+                            summary_y_position,
+                            summary_text,
+                            transform=ax.transAxes,
+                            verticalalignment='bottom',
+                            horizontalalignment='right',
+                            bbox=dict(facecolor='white',
+                                      edgecolor='black',
+                                      boxstyle='round,pad=0.5'))
+
+                ax.text(0.01, 0.02,
+                        slr_text,
+                        transform=ax.transAxes,
+                        fontsize=8,
+                        color='gray',
+                        verticalalignment='bottom',
+                        horizontalalignment='left')
+
+                plt.tight_layout()
+                fig_list.append(fig)
+                st.pyplot(fig)
 
         # ------------------------------------------------------------------
         #         END OF MAIN ELEMENT LOOP
