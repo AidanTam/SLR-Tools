@@ -98,5 +98,77 @@ class OtherLayoutTests(unittest.TestCase):
         self.assertEqual(p.analytes, ["Au_ppm_Au-AA23", "Ba_ppm_ME-MS81", "Ba_ppm_ME-MS81_2"])
 
 
+class CertificateDetailsTests(unittest.TestCase):
+    """Certificate number and dates are carried onto every output row."""
+
+    def _als_csv(self, cert, received, finalized):
+        return (
+            f"{cert} - Finalized\n"
+            'CLIENT : "Some Client"\n'
+            f"DATE RECEIVED : {received}  DATE FINALIZED : {finalized}\n"
+            ",ME-MS81,ME-MS81\n"
+            "SAMPLE,Ba,Ce\n"
+            "DESCRIPTION,ppm,ppm\n"
+            "AB-001,285,440\n"
+            "AB-002,298,443\n"
+        )
+
+    @unittest.skipUnless(os.path.exists(ALS_CSV), "example certificate not in repo")
+    def test_example_certificate_details(self):
+        with open(ALS_CSV, encoding="latin-1") as fh:
+            p = s.parse_text(fh.read())
+        self.assertEqual((p.certificate, p.date_received, p.date_finalized),
+                         ("VA26040082", "2026-02-02", "2026-02-25"))
+        self.assertEqual(p.metadata["CLIENT"], "ALSEDR - ALS Dominican Republic, S.A.S.")
+
+    def test_every_row_carries_file_columns(self):
+        p = s.parse_text(self._als_csv("VA00000003", "2026-01-05", "2026-01-20"))
+        p.source_file = "VA00000003.csv"
+        expected = ["VA00000003.csv", "VA00000003", "2026-01-05", "2026-01-20"]
+        rows = s.to_wide_csv(p).splitlines()
+        self.assertEqual(rows[0].split(",")[:5], s.FILE_COLUMNS + ["sample_id"])
+        for row in rows[1:]:
+            self.assertEqual(row.split(",")[:4], expected)
+        long_rows = s.to_long_csv(p).splitlines()
+        self.assertEqual(long_rows[0].split(",")[:4], s.FILE_COLUMNS)
+        self.assertEqual(long_rows[1].split(",")[:4], expected)
+        self.assertEqual(list(s.to_wide_df(p).columns[:4]), s.FILE_COLUMNS)
+
+    def test_merged_files_keep_their_own_dates(self):
+        a = s.parse_text(self._als_csv("VA00000004", "2026-01-05", "2026-01-20"))
+        b = s.parse_text(self._als_csv("VA00000005", "2026-03-01", "2026-03-15"))
+        a.source_file, b.source_file = "a.csv", "b.csv"
+        self.assertEqual(s.file_values(a), ["a.csv", "VA00000004", "2026-01-05", "2026-01-20"])
+        self.assertEqual(s.file_values(b), ["b.csv", "VA00000005", "2026-03-01", "2026-03-15"])
+
+    def test_other_date_layouts_become_iso(self):
+        p = s.parse_text(self._als_csv("VA00000006", "05-FEB-2026", "2026/02/20"))
+        self.assertEqual((p.date_received, p.date_finalized), ("2026-02-05", "2026-02-20"))
+
+    def test_missing_header_leaves_blanks(self):
+        p = s.parse_text("SampleID,Au,Ag\nAB-001,1.2,3.4\n")
+        self.assertEqual((p.certificate, p.date_received, p.date_finalized), ("", "", ""))
+
+    def test_fixed_width_dates_and_certificate(self):
+        lines = [
+            _fw("VA00000007", []),
+            _fw("CLIENT", ["X"]),
+            _fw("DATE RECEIVED", ["2026-01-05"], stride=12),
+            _fw("DATE COMPLETED", ["2026-01-28"], stride=12),
+            _fw("", ["Au-AA23", "ME-MS81"]),
+            _fw("", ["Au", "Ba"]),
+            _fw("UNITS", ["ppm", "ppm"]),
+            _fw("DETECTION", ["0.005", "0.5"]),
+            _fw("AB-001", ["1.2", "285"]),
+        ]
+        p = s.parse_text("\n".join(lines))
+        self.assertEqual(p.fmt, "fixed_width")
+        self.assertEqual((p.certificate, p.date_received, p.date_finalized),
+                         ("VA00000007", "2026-01-05", "2026-01-28"))
+        # The certificate is a file column now, not a second lead column.
+        self.assertEqual(p.lead_col_names, ["sample_id"])
+        self.assertEqual(p.data_rows[0], ["AB-001", "1.2", "285"])
+
+
 if __name__ == "__main__":
     unittest.main()

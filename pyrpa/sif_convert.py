@@ -25,6 +25,7 @@ import io
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import datetime
 
 # --------------------------------------------------------------------------
 # Tunables
@@ -70,6 +71,20 @@ SAMPLE_HEADER_WORDS = {
 
 NON_NUMERIC_RESULT_TOKENS = {"", "-", "na", "n/a", "nd", "n.d.", "ins", "insuf"}
 
+# Per-file columns written at the start of every output row, so merged data
+# can be traced back to its certificate and dated.
+FILE_COLUMNS = ["source_file", "certificate", "date_received", "date_finalized"]
+
+# Certificate header dates. ALS CSVs put both on one line
+# ("DATE RECEIVED : 2026-02-02  DATE FINALIZED : 2026-02-25"); fixed-width
+# files may say COMPLETED instead of FINALIZED.
+_DATE_VALUE = r"[:\s]*([0-9]{1,4}[-/.][0-9A-Za-z]{1,9}[-/.][0-9]{1,4})"
+DATE_RECEIVED_RE = re.compile(r"DATE\s+RECEIVED" + _DATE_VALUE, re.IGNORECASE)
+DATE_FINALIZED_RE = re.compile(r"DATE\s+(?:FINALI[SZ]ED|COMPLETED)" + _DATE_VALUE, re.IGNORECASE)
+_DATE_FORMATS = ("%Y-%m-%d", "%Y/%m/%d", "%d-%b-%Y", "%d-%b-%y", "%d/%m/%Y", "%d.%m.%Y", "%Y.%m.%d")
+# A certificate number at the start of the first line: "VA26040082 - Finalized".
+CERTIFICATE_RE = re.compile(r"^\s*([A-Za-z]{1,6}\d{4,}[A-Za-z0-9-]*)")
+
 
 # --------------------------------------------------------------------------
 # Data model
@@ -87,6 +102,51 @@ class ParsedSif:
     analytes: list = field(default_factory=list)          # unique display names
     data_rows: list = field(default_factory=list)         # aligned lead+analyte
     source_file: str = ""                     # set by the caller; written to every output row
+    date_received: str = ""                   # from the certificate header, ISO when parseable
+    date_finalized: str = ""
+
+
+def _iso_date(raw: str) -> str:
+    """ISO date when `raw` is in a known layout, else `raw` unchanged
+    (day/month order is only assumed for layouts that can't be US-style)."""
+    for fmt in _DATE_FORMATS:
+        try:
+            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    return raw
+
+
+def header_details(header_lines: list) -> dict:
+    """Certificate number and received / finalized dates from the lines above
+    a certificate's header block. Missing values come back as ""."""
+    text = "\n".join(header_lines)
+    rec = DATE_RECEIVED_RE.search(text)
+    fin = DATE_FINALIZED_RE.search(text)
+    first = next((ln for ln in header_lines if ln.strip()), "")
+    cert = CERTIFICATE_RE.match(first.strip().strip('"'))
+    return {
+        "certificate": cert.group(1) if cert else "",
+        "date_received": _iso_date(rec.group(1)) if rec else "",
+        "date_finalized": _iso_date(fin.group(1)) if fin else "",
+    }
+
+
+def _metadata_pairs(header_lines: list) -> dict:
+    """"KEY : VALUE" pairs from delimited header lines; a line can hold
+    several pairs separated by two or more spaces."""
+    meta = {}
+    for ln in header_lines:
+        for chunk in re.split(r"\s{2,}", ln.strip().strip(",")):
+            key, sep, val = chunk.partition(":")
+            if sep and key.strip():
+                meta[key.strip()] = val.strip().strip(",").strip('"').strip()
+    return meta
+
+
+def file_values(p: "ParsedSif") -> list:
+    """Values for FILE_COLUMNS, for one parsed certificate."""
+    return [p.source_file, p.certificate, p.date_received, p.date_finalized]
 
 
 # --------------------------------------------------------------------------
@@ -262,23 +322,26 @@ def parse_fixed_width(lines: list) -> ParsedSif:
 
     display = _column_names(analyte_headers, n_cols)
 
-    lead_names = ["certificate", "sample_id"]
+    lead_names = ["sample_id"]
     data_rows = []
     for ln in lines[data_start:]:
         sid = lead(ln, lead_width)
         if not sid or sid.upper() in FIXED_HEADER_LABELS:
             continue
-        data_rows.append([certificate, sid] + cells(ln))
+        data_rows.append([sid] + cells(ln))
 
+    details = header_details(lines[:block_start])
     return ParsedSif(
         fmt="fixed_width",
-        certificate=certificate,
+        certificate=details["certificate"] or certificate,
         metadata=metadata,
         analyte_headers=analyte_headers,
-        n_lead_cols=2,
+        n_lead_cols=1,
         lead_col_names=lead_names,
         analytes=display,
         data_rows=data_rows,
+        date_received=details["date_received"],
+        date_finalized=details["date_finalized"],
     )
 
 
@@ -346,6 +409,10 @@ def parse_delimited(text: str, forced_delim: str | None = None) -> ParsedSif:
         if len(header_block) >= len(DELIM_HEADER_LABELS) + 1:
             break
         i -= 1
+    # Lines above the header block: certificate number, client, dates, ...
+    # csv rows map 1:1 to lines unless a quoted field spans lines, which
+    # certificate headers don't do.
+    header_lines = text.splitlines()[: data_start - len(header_block)]
 
     def col(row, idx):
         return row[idx].strip() if idx < len(row) else ""
@@ -387,9 +454,14 @@ def parse_delimited(text: str, forced_delim: str | None = None) -> ParsedSif:
             continue
         data_rows.append([col(row, k) for k in range(n_lead + n_analytes)])
 
+    details = header_details(header_lines)
     return ParsedSif(
         fmt="delimited",
         delimiter=delimiter,
+        certificate=details["certificate"],
+        metadata=_metadata_pairs(header_lines),
+        date_received=details["date_received"],
+        date_finalized=details["date_finalized"],
         analyte_headers=analyte_headers,
         n_lead_cols=n_lead,
         lead_col_names=lead_names,
@@ -415,9 +487,9 @@ def parse_text(text: str, forced_delim: str | None = None) -> ParsedSif:
 def to_wide_csv(p: ParsedSif) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["source_file"] + list(p.lead_col_names) + list(p.analytes))
+    w.writerow(FILE_COLUMNS + list(p.lead_col_names) + list(p.analytes))
     for row in p.data_rows:
-        w.writerow([p.source_file] + list(row))
+        w.writerow(file_values(p) + list(row))
     return buf.getvalue()
 
 
@@ -432,21 +504,21 @@ def to_long_csv(p: ParsedSif) -> str:
 
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["source_file"] + list(p.lead_col_names)
+    w.writerow(FILE_COLUMNS + list(p.lead_col_names)
                + ["col_index", "element", "method", "value", "units", "detection_limit", "flag"])
     for row in p.data_rows:
         lead = row[: p.n_lead_cols]
         for j in range(len(p.analytes)):
             raw = row[p.n_lead_cols + j] if (p.n_lead_cols + j) < len(row) else ""
-            w.writerow([p.source_file] + lead + [j, at(elements, j), at(methods, j), raw,
+            w.writerow(file_values(p) + lead + [j, at(elements, j), at(methods, j), raw,
                                at(units, j), at(dls, j), result_flag(raw)])
     return buf.getvalue()
 
 
 def to_wide_df(p: ParsedSif):
     import pandas as pd
-    cols = ["source_file"] + list(p.lead_col_names) + list(p.analytes)
-    return pd.DataFrame([[p.source_file] + list(r) for r in p.data_rows], columns=cols)
+    cols = FILE_COLUMNS + list(p.lead_col_names) + list(p.analytes)
+    return pd.DataFrame([file_values(p) + list(r) for r in p.data_rows], columns=cols)
 
 
 def analyte_table_df(p: ParsedSif):

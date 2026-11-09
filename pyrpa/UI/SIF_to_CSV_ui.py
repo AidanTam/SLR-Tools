@@ -88,11 +88,11 @@ def _merge_wide(parsed):
                 union.append(c)
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["source_file"] + union)
+    w.writerow(sif_convert.FILE_COLUMNS + union)
     for (_, r), h in zip(parsed, headers):
         idx = {c: k for k, c in enumerate(h)}
         for row in r.data_rows:
-            w.writerow([r.source_file] + [row[idx[c]] if c in idx and idx[c] < len(row) else "" for c in union])
+            w.writerow(sif_convert.file_values(r) + [row[idx[c]] if c in idx and idx[c] < len(row) else "" for c in union])
     return buf.getvalue(), False
 
 
@@ -118,6 +118,8 @@ def _report(parsed, failed, same_cols, outdir):
             name,
             "  Format          : " + fmt,
             "  Certificate     : " + (d["certificate"] or "-"),
+            "  Date received   : " + (r.date_received or "-"),
+            "  Date finalized  : " + (r.date_finalized or "-"),
             "  Analyte columns : %d" % d["analyte_count"],
             "  Rows (incl. QC) : %d" % d["sample_count"],
             "",
@@ -465,12 +467,12 @@ if multi:
                     union.append(col)
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow(["source_file"] + union)
+        writer.writerow(sif_convert.FILE_COLUMNS + union)
         for _, p in results:
             pos = {col: i for i, col in enumerate(list(p.lead_col_names) + list(p.analytes))}
             for row in p.data_rows:
                 writer.writerow(
-                    [p.source_file]
+                    sif_convert.file_values(p)
                     + [row[pos[c]] if c in pos and pos[c] < len(row) else "" for c in union]
                 )
         wide_combined = buf.getvalue()
@@ -577,6 +579,8 @@ for idx, (name, parsed) in enumerate(results):
             )
         else:
             meta = parsed.metadata or {}
-            bits = [f"**{k}:** {meta[k]}" for k in ("CLIENT", "PROJECT", "DATE COMPLETED") if k in meta]
+            bits = [f"**{k}:** {meta[k]}" for k in ("CLIENT", "PROJECT") if meta.get(k)]
+            bits += [f"**{lbl}:** {v}" for lbl, v in (("Received", parsed.date_received),
+                                                      ("Finalized", parsed.date_finalized)) if v]
             if bits:
                 st.caption(" · ".join(bits))
